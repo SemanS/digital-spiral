@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import os
+import random
+import uuid
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -214,6 +222,9 @@ class Issue:
     updated: datetime = field(default_factory=lambda: datetime.now(UTC))
     sprint_id: int | None = None
     comments: list[Comment] = field(default_factory=list)
+    custom_fields: dict[str, Any] = field(default_factory=dict)
+    links: list[dict[str, Any]] = field(default_factory=list)
+    changelog: list[dict[str, Any]] = field(default_factory=list)
 
     def project(self, store: "InMemoryStore") -> Project:
         return store.projects[self.project_key]
@@ -230,7 +241,12 @@ class Issue:
     def assignee(self, store: "InMemoryStore") -> User | None:
         return store.users.get(self.assignee_id) if self.assignee_id else None
 
-    def to_api(self, store: "InMemoryStore") -> dict[str, Any]:
+    def to_api(
+        self,
+        store: "InMemoryStore",
+        *,
+        expand: set[str] | None = None,
+    ) -> dict[str, Any]:
         assignee = self.assignee(store)
         reporter = self.reporter(store)
         project = self.project(store)
@@ -259,10 +275,49 @@ class Issue:
         }
         if self.sprint_id:
             fields["customfield_10020"] = [self.sprint_id]
-        return {
+        for key, value in sorted(self.custom_fields.items()):
+            fields[key] = value
+        if self.links:
+            fields["issuelinks"] = self.links
+        payload = {
             "id": self.id,
             "key": self.key,
             "fields": fields,
+        }
+        changelog = self._changelog_payload(store, expand=expand)
+        if changelog is not None:
+            payload["changelog"] = changelog
+        return payload
+
+    def _changelog_payload(
+        self, store: "InMemoryStore", *, expand: set[str] | None
+    ) -> dict[str, Any] | None:
+        if not expand or "changelog" not in expand:
+            return None
+        histories = []
+        for entry in self.changelog:
+            author = store.users.get(entry.get("author"))
+            histories.append(
+                {
+                    "id": entry.get("id"),
+                    "created": entry.get("created"),
+                    "author": author.to_api() if author else None,
+                    "items": [
+                        {
+                            "field": entry.get("field"),
+                            "from": entry.get("from"),
+                            "fromString": entry.get("fromString"),
+                            "to": entry.get("to"),
+                            "toString": entry.get("toString"),
+                        }
+                    ],
+                }
+            )
+        return {
+            "startAt": 0,
+            "maxResults": len(histories),
+            "total": len(histories),
+            "histories": histories,
         }
 
 
@@ -270,8 +325,13 @@ class Issue:
 class WebhookRegistration:
     id: str
     url: str
-    events: list[str]
-    jql: str | None
+    events: list[str] = field(default_factory=list)
+    jql: str | None = None
+    secret: str | None = None
+    active: bool = True
+
+
+logger = logging.getLogger("mockjira.webhooks")
 
 
 class InMemoryStore:
@@ -291,6 +351,8 @@ class InMemoryStore:
         self.service_requests: dict[str, ServiceRequest] = {}
         self.webhooks: dict[str, WebhookRegistration] = {}
         self.deliveries: list[dict[str, Any]] = []
+        self._delivery_index: dict[str, dict[str, Any]] = {}
+        self._delivered_ids: deque[str] = deque(maxlen=2000)
         self.tokens: dict[str, str] = {}
         self.rate_calls: dict[str, deque[tuple[datetime, int]]] = defaultdict(deque)
         self.next_issue_id = 10000
@@ -298,6 +360,16 @@ class InMemoryStore:
         self.next_request_id = 30000
         self.next_webhook_id = 40000
         self.next_sprint_id = 5000
+        self.next_link_id = 60000
+        jitter_min = int(os.getenv("MOCKJIRA_WEBHOOK_JITTER_MIN", "50"))
+        jitter_max = int(os.getenv("MOCKJIRA_WEBHOOK_JITTER_MAX", "250"))
+        if jitter_min > jitter_max:
+            jitter_min, jitter_max = jitter_max, jitter_min
+        self._webhook_jitter_ms: tuple[int, int] = (jitter_min, jitter_max)
+        self._webhook_poison_prob: float = float(
+            os.getenv("MOCKJIRA_WEBHOOK_POISON_PROB", "0.0")
+        )
+        self._force_429_tokens: set[str] = set()
 
     # ------------------------------------------------------------------
     # Factory
@@ -521,6 +593,12 @@ class InMemoryStore:
     def is_valid_token(self, token: str) -> bool:
         return token in self.tokens
 
+    def should_force_429(self, token: str) -> bool:
+        if token in self._force_429_tokens:
+            return False
+        self._force_429_tokens.add(token)
+        return True
+
     def register_call(self, token: str, cost: int = 1) -> None:
         limit = 100
         window = timedelta(seconds=60)
@@ -605,6 +683,18 @@ class InMemoryStore:
         assignee_field = fields.get("assignee") or {}
         assignee_id = assignee_field.get("accountId")
         labels = fields.get("labels", [])
+        sprint_values = fields.get("customfield_10020")
+        sprint_id: int | None = None
+        if isinstance(sprint_values, list) and sprint_values:
+            try:
+                sprint_id = int(sprint_values[0])
+            except (TypeError, ValueError):
+                sprint_id = None
+        custom_fields = {
+            key: value
+            for key, value in fields.items()
+            if key.startswith("customfield_") and key != "customfield_10020"
+        }
         issue = self._create_issue(
             project_key=project_key,
             issue_type_id=issue_type_id,
@@ -614,7 +704,10 @@ class InMemoryStore:
             assignee_id=assignee_id,
             status_id="1",
             labels=labels,
+            sprint_id=sprint_id,
         )
+        if custom_fields:
+            issue.custom_fields.update(custom_fields)
         if project_key == "SUP":
             self._ensure_service_request(issue)
         self.dispatch_event(
@@ -635,6 +728,18 @@ class InMemoryStore:
             issue.assignee_id = assignee.get("accountId") if assignee else None
         if "labels" in fields:
             issue.labels = list(fields["labels"])
+        if "customfield_10020" in fields:
+            values = fields.get("customfield_10020")
+            if isinstance(values, list) and values:
+                try:
+                    issue.sprint_id = int(values[0])
+                except (TypeError, ValueError):
+                    issue.sprint_id = None
+            else:
+                issue.sprint_id = None
+        for key, value in fields.items():
+            if key.startswith("customfield_") and key != "customfield_10020":
+                issue.custom_fields[key] = value
         issue.updated = datetime.now(UTC)
         self.dispatch_event(
             "jira:issue_updated",
@@ -642,7 +747,63 @@ class InMemoryStore:
         )
         return issue
 
-    def search_issues(self, filters: dict[str, Any]) -> list[Issue]:
+    def create_issue_link(self, payload: dict[str, Any], actor_id: str) -> dict[str, Any]:
+        type_info = payload.get("type") or {}
+        outward_key = payload.get("outwardIssue", {}).get("key")
+        inward_key = payload.get("inwardIssue", {}).get("key")
+        if not outward_key or not inward_key:
+            raise ValueError("Both outwardIssue and inwardIssue keys are required")
+        outward_issue = self.issues.get(outward_key)
+        inward_issue = self.issues.get(inward_key)
+        if not outward_issue or not inward_issue:
+            raise ValueError("Unknown issue key")
+
+        link_id = str(self.next_link_id)
+        self.next_link_id += 1
+
+        outward_issue.links.append(
+            {
+                "id": link_id,
+                "type": type_info,
+                "outwardIssue": {
+                    "id": inward_issue.id,
+                    "key": inward_issue.key,
+                    "fields": {"summary": inward_issue.summary},
+                },
+            }
+        )
+        inward_issue.links.append(
+            {
+                "id": link_id,
+                "type": type_info,
+                "inwardIssue": {
+                    "id": outward_issue.id,
+                    "key": outward_issue.key,
+                    "fields": {"summary": outward_issue.summary},
+                },
+            }
+        )
+
+        now = datetime.now(UTC)
+        outward_issue.updated = now
+        inward_issue.updated = now
+
+        self.dispatch_event(
+            "jira:issue_updated",
+            {"issue": outward_issue.to_api(self)},
+        )
+        self.dispatch_event(
+            "jira:issue_updated",
+            {"issue": inward_issue.to_api(self)},
+        )
+        return {"id": link_id}
+
+    def search_issues(
+        self,
+        filters: dict[str, Any],
+        *,
+        order_by: list[tuple[str, str]] | None = None,
+    ) -> list[Issue]:
         results = list(self.issues.values())
         project = filters.get("project")
         if project:
@@ -673,17 +834,67 @@ class InMemoryStore:
                 for i in results
                 if (i.assignee_id or "unassigned").lower() in values
             ]
-        return sorted(results, key=lambda i: i.created)
+        if not order_by:
+            return sorted(results, key=lambda i: i.created)
+        ordered = list(results)
+        for field, direction in reversed(order_by):
+            reverse = direction.lower() == "desc"
+            ordered.sort(
+                key=lambda issue: self._order_key(issue, field),
+                reverse=reverse,
+            )
+        return ordered
+
+    def _order_key(self, issue: Issue, field: str):
+        field = field.lower()
+        if field == "updated":
+            return issue.updated
+        if field == "created":
+            return issue.created
+        if field == "priority":
+            return self._priority_sort_value(issue)
+        return issue.created
+
+    def _priority_sort_value(self, issue: Issue) -> tuple[int, str]:
+        raw = issue.custom_fields.get("priority")
+        if isinstance(raw, dict):
+            name = raw.get("name", "")
+        else:
+            name = str(raw or "")
+        order = {
+            "highest": 0,
+            "high": 1,
+            "medium": 2,
+            "low": 3,
+            "lowest": 4,
+        }
+        rank = order.get(name.lower(), 5)
+        return (rank, name)
 
     def get_transitions(self, issue: Issue) -> list[Transition]:
         return self.transitions.get(issue.status_id, [])
 
-    def apply_transition(self, issue: Issue, transition_id: str) -> Issue:
+    def apply_transition(
+        self, issue: Issue, transition_id: str, actor_id: str
+    ) -> Issue:
         transitions = self.get_transitions(issue)
         for transition in transitions:
             if transition.id == transition_id:
+                previous_status = issue.status(self)
                 issue.status_id = transition.to_status.id
-                issue.updated = datetime.now(UTC)
+                now = datetime.now(UTC)
+                issue.updated = now
+                entry = {
+                    "id": str(uuid.uuid4()),
+                    "field": "status",
+                    "from": previous_status.id,
+                    "fromString": previous_status.name,
+                    "to": transition.to_status.id,
+                    "toString": transition.to_status.name,
+                    "created": now.isoformat(),
+                    "author": actor_id,
+                }
+                issue.changelog.append(entry)
                 self.dispatch_event(
                     "jira:issue_updated",
                     {"issue": issue.to_api(self)},
@@ -751,8 +962,21 @@ class InMemoryStore:
         self, payload: dict[str, Any], reporter_id: str
     ) -> ServiceRequest:
         field_values = payload.get("requestFieldValues", {})
-        summary = field_values.get("summary", "Support request")
-        description = field_values.get("description", "")
+        summary = "Support request"
+        description = ""
+        if isinstance(field_values, list):
+            for item in field_values:
+                if not isinstance(item, dict):
+                    continue
+                field_id = item.get("fieldId")
+                value = item.get("value")
+                if field_id == "summary":
+                    summary = value or summary
+                elif field_id == "description":
+                    description = value or description
+        elif isinstance(field_values, dict):
+            summary = field_values.get("summary", summary)
+            description = field_values.get("description", description)
         issue = self._create_issue(
             project_key="SUP",
             issue_type_id="10003",
@@ -795,13 +1019,21 @@ class InMemoryStore:
     def register_webhook(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         registrations = []
         for body in payload.get("webhooks", []):
+            url = body.get("url")
+            if not url:
+                registrations.append(
+                    {"createdWebhookId": None, "failureReason": "Missing url"}
+                )
+                continue
             webhook_id = str(self.next_webhook_id)
             self.next_webhook_id += 1
             registration = WebhookRegistration(
                 id=webhook_id,
-                url=body.get("url"),
+                url=url,
                 events=body.get("events", []),
-                jql=body.get("jql"),
+                jql=body.get("jqlFilter") or body.get("jql"),
+                secret=body.get("secret"),
+                active=body.get("active", True),
             )
             self.webhooks[webhook_id] = registration
             registrations.append(
@@ -811,7 +1043,14 @@ class InMemoryStore:
 
     def list_webhooks(self) -> list[dict[str, Any]]:
         return [
-            {"id": reg.id, "url": reg.url, "events": reg.events, "jql": reg.jql}
+            {
+                "id": reg.id,
+                "url": reg.url,
+                "events": reg.events,
+                "jql": reg.jql,
+                "active": reg.active,
+                "hasSecret": bool(reg.secret),
+            }
             for reg in self.webhooks.values()
         ]
 
@@ -819,34 +1058,269 @@ class InMemoryStore:
         self.webhooks.pop(webhook_id, None)
 
     def dispatch_event(self, event_type: str, payload: dict[str, Any]) -> None:
-        delivery = {
-            "event": event_type,
-            "payload": payload,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
-        self.deliveries.append(delivery)
+        event_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        self._delivered_ids.append(event_id)
+        self.deliveries.append(
+            {
+                "event": event_type,
+                "payload": payload,
+                "timestamp": now.isoformat(),
+            }
+        )
         for registration in self.webhooks.values():
-            if event_type not in registration.events:
+            if not registration.active or event_type not in registration.events:
                 continue
-            self._send_webhook(registration.url, delivery)
+            delivery_id = str(uuid.uuid4())
+            record = {
+                "id": delivery_id,
+                "webhookId": registration.id,
+                "event": event_type,
+                "eventId": event_id,
+                "url": registration.url,
+                "payload": payload,
+                "timestamp": now.isoformat(),
+                "status": "pending",
+                "attempts": 0,
+            }
+            self.deliveries.append(record)
+            self._schedule_delivery(
+                delivery_id=delivery_id,
+                event_type=event_type,
+                event_id=event_id,
+                url=registration.url,
+                secret=registration.secret,
+                payload=payload,
+                record=record,
+            )
 
-    def _send_webhook(self, url: str | None, delivery: dict[str, Any]) -> None:
-        if not url:
-            return
+    def _schedule_delivery(
+        self,
+        *,
+        delivery_id: str,
+        event_type: str,
+        event_id: str,
+        url: str | None,
+        secret: str | None,
+        payload: dict[str, Any],
+        record: dict[str, Any],
+    ) -> None:
+        meta = {
+            "delivery_id": delivery_id,
+            "event": event_type,
+            "event_id": event_id,
+            "url": url,
+            "secret": secret,
+            "payload": payload,
+            "record": record,
+        }
+        self._delivery_index[delivery_id] = meta
+        self._delivered_ids.append(event_id)
+        record["status"] = "pending"
+        record["attempts"] = 0
+        record.pop("completedAt", None)
+        logger.info(
+            "Queue webhook delivery id=%s event=%s event_id=%s url=%s",
+            delivery_id,
+            event_type,
+            event_id,
+            url,
+        )
         try:
-            with httpx.Client(timeout=0.5) as client:
-                client.post(url, json=delivery)
-        except httpx.HTTPError:
-            # Fail silently; this is a mock server.
-            pass
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(self._deliver_webhook(meta))
+        else:
+            loop.create_task(self._deliver_webhook(meta))
+
+    async def _deliver_webhook(self, meta: dict[str, Any]) -> None:
+        record = meta["record"]
+        url = meta["url"]
+        if not url:
+            record["status"] = "skipped"
+            return
+        payload = meta["payload"]
+        secret = meta["secret"]
+        event_type = meta["event"]
+        event_id = meta["event_id"]
+        jitter = random.uniform(*self._webhook_jitter_ms) / 1000
+        await asyncio.sleep(jitter)
+        body = json.dumps(payload).encode()
+        headers = {
+            "Content-Type": "application/json",
+            "X-MockJira-Event-Id": event_id,
+            "X-MockJira-Event-Type": event_type,
+        }
+        if secret:
+            digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+            headers["X-MockJira-Signature"] = f"sha256={digest}"
+
+        delays = [0.5, 1.0, 2.0]
+        attempts = 0
+        status = "failed"
+        last_status: int | None = None
+        for idx in range(len(delays) + 1):
+            attempts = idx + 1
+            record["attempts"] = attempts
+            try:
+                if random.random() < self._webhook_poison_prob:
+                    raise httpx.HTTPError("Injected failure")
+                async with httpx.AsyncClient(timeout=1.5) as client:
+                    response = await client.post(url, content=body, headers=headers)
+                last_status = response.status_code
+                record["lastStatus"] = last_status
+                if 500 <= response.status_code < 600:
+                    raise httpx.HTTPError("Server error")
+                status = "delivered" if response.status_code < 400 else "failed"
+                break
+            except httpx.HTTPError:
+                status = "retrying" if idx < len(delays) else "failed"
+                if idx >= len(delays):
+                    break
+                await asyncio.sleep(delays[idx])
+        record["status"] = status
+        record["completedAt"] = datetime.now(UTC).isoformat()
+        if last_status is not None:
+            record["lastStatus"] = last_status
+        logger.info(
+            "Webhook delivery id=%s event_id=%s attempts=%s status=%s",
+            meta["delivery_id"],
+            event_id,
+            attempts,
+            status,
+        )
+
+    def replay_delivery(self, delivery_id: str) -> dict[str, Any]:
+        meta = self._delivery_index.get(delivery_id)
+        if not meta:
+            raise ValueError("Unknown delivery id")
+        record = meta["record"]
+        record["timestamp"] = datetime.now(UTC).isoformat()
+        self._schedule_delivery(
+            delivery_id=delivery_id,
+            event_type=meta["event"],
+            event_id=meta["event_id"],
+            url=meta["url"],
+            secret=meta["secret"],
+            payload=meta["payload"],
+            record=record,
+        )
+        return record
+
+    def update_webhook_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
+        if "poison_prob" in settings:
+            try:
+                self._webhook_poison_prob = max(0.0, float(settings["poison_prob"]))
+            except (TypeError, ValueError):
+                pass
+        jitter = settings.get("jitter_ms")
+        if isinstance(jitter, (list, tuple)) and len(jitter) == 2:
+            try:
+                low = int(jitter[0])
+                high = int(jitter[1])
+            except (TypeError, ValueError):
+                low, high = self._webhook_jitter_ms
+            else:
+                if low > high:
+                    low, high = high, low
+                self._webhook_jitter_ms = (low, high)
+        return {
+            "poison_prob": self._webhook_poison_prob,
+            "jitter_ms": list(self._webhook_jitter_ms),
+        }
 
     # ------------------------ Utilities --------------------------------
+    def export_seed(self) -> dict[str, Any]:
+        return {
+            "users": [asdict(user) for user in self.users.values()],
+            "projects": [asdict(project) for project in self.projects.values()],
+            "issue_types": [asdict(it) for it in self.issue_types.values()],
+            "issues": [self._issue_to_seed(issue) for issue in self.issues.values()],
+        }
+
+    def import_seed(self, payload: dict[str, Any]) -> None:
+        self.users = {
+            item["account_id"]: User(**item)
+            for item in payload.get("users", [])
+        }
+        self.projects = {
+            item["key"]: Project(**item)
+            for item in payload.get("projects", [])
+        }
+        self.issue_types = {
+            item["id"]: IssueType(**item)
+            for item in payload.get("issue_types", [])
+        }
+        self.issues = {}
+        self.issue_counter = defaultdict(int)
+        self.next_issue_id = 10000
+        self.next_comment_id = 20000
+        for item in payload.get("issues", []):
+            issue = self._issue_from_seed(item)
+            self.issues[issue.key] = issue
+            try:
+                seq = int(issue.key.split("-", 1)[1])
+            except (IndexError, ValueError):
+                seq = 0
+            self.issue_counter[issue.project_key] = max(
+                self.issue_counter[issue.project_key], seq
+            )
+            self.next_issue_id = max(self.next_issue_id, int(issue.id) + 1)
+            if issue.comments:
+                last_comment_id = max(int(c.id) for c in issue.comments)
+                self.next_comment_id = max(self.next_comment_id, last_comment_id + 1)
+
     def normalize_adf(self, value: Any) -> dict[str, Any]:
         if isinstance(value, dict) and value.get("type") == "doc":
             return value
         if isinstance(value, str):
             return self._adf(value)
         raise ValueError("Unsupported ADF payload")
+
+    def _issue_to_seed(self, issue: Issue) -> dict[str, Any]:
+        payload = asdict(issue)
+        payload["created"] = issue.created.isoformat()
+        payload["updated"] = issue.updated.isoformat()
+        payload["comments"] = [
+            {
+                **asdict(comment),
+                "created": comment.created.isoformat(),
+            }
+            for comment in issue.comments
+        ]
+        return payload
+
+    def _issue_from_seed(self, payload: dict[str, Any]) -> Issue:
+        comments = [
+            Comment(
+                id=str(comment["id"]),
+                author_id=comment.get("author_id") or comment.get("authorId"),
+                body=comment.get("body", {}),
+                created=self._parse_datetime(comment.get("created"))
+                or datetime.now(UTC),
+            )
+            for comment in payload.get("comments", [])
+        ]
+        issue = Issue(
+            id=str(payload["id"]),
+            key=payload["key"],
+            project_key=payload.get("project_key", payload.get("projectKey")),
+            issue_type_id=payload.get("issue_type_id", payload.get("issueTypeId", "10001")),
+            summary=payload.get("summary", "Imported issue"),
+            description=payload.get("description", self._adf("")),
+            status_id=payload.get("status_id", "1"),
+            reporter_id=payload.get("reporter_id"),
+            assignee_id=payload.get("assignee_id"),
+            labels=payload.get("labels", []),
+            created=self._parse_datetime(payload.get("created")) or datetime.now(UTC),
+            updated=self._parse_datetime(payload.get("updated")) or datetime.now(UTC),
+            sprint_id=payload.get("sprint_id"),
+            comments=comments,
+            custom_fields=payload.get("custom_fields", {}),
+            links=payload.get("links", []),
+            changelog=payload.get("changelog", []),
+        )
+        return issue
 
     def _ensure_service_request(self, issue: Issue) -> ServiceRequest:
         request_id = str(self.next_request_id)

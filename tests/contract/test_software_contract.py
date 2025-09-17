@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 import requests
+pytest.importorskip("schemathesis")
 import schemathesis as st
 from hypothesis import HealthCheck, settings
 

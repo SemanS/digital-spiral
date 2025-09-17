@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from ..auth import get_current_user
 from ..store import InMemoryStore
@@ -54,3 +54,27 @@ async def list_deliveries(
 ) -> dict:
     store = get_store(request)
     return {"values": store.deliveries}
+
+
+@router.post("/_mock/webhooks/replay")
+async def replay_delivery(
+    request: Request,
+    delivery_id: str = Query(alias="id"),
+    _: str = Depends(get_current_user),
+) -> dict:
+    store = get_store(request)
+    try:
+        record = store.replay_delivery(delivery_id)
+    except ValueError as exc:
+        raise ApiError(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    return {"deliveryId": delivery_id, "status": record["status"]}
+
+
+@router.post("/_mock/webhooks/settings")
+async def update_webhook_settings(
+    payload: dict,
+    request: Request,
+    _: str = Depends(get_current_user),
+) -> dict:
+    store = get_store(request)
+    return store.update_webhook_settings(payload)
