@@ -1,0 +1,5 @@
+pytest
+requests
+schemathesis==3.*
+openapi-core==0.19.*
+prance

@@ -24,3 +24,6 @@ test = [
 
 [project.scripts]
 mock-jira-server = "mockjira.main:run"
+
+[tool.setuptools]
+packages = ["mockjira"]
