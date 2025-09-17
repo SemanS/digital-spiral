@@ -36,19 +36,28 @@ _JQL_EQUALS_PATTERN = re.compile(r"^(?P<field>[\w.]+)\s*=\s*(?P<value>.+)$")
 
 
 def parse_jql(jql: str | None) -> dict[str, Any]:
-    """Parse a very small subset of JQL into a dictionary of filters."""
+    """Parse a small, opinionated subset of JQL.
+
+    Returns a dictionary with ``filters`` and ``order_by`` keys. The ``filters``
+    mapping contains normalised field/value pairs for equality and IN clauses.
+    ``order_by`` is a list of ``(field, direction)`` tuples in declaration order.
+    """
 
     if not jql:
-        return {}
+        return {"filters": {}, "order_by": []}
     raw = jql.strip()
     if not raw:
-        return {}
+        return {"filters": {}, "order_by": []}
 
-    # Ignore ORDER BY clause.
-    raw = raw.split("ORDER BY", 1)[0].strip()
+    parts = re.split(r"\s+ORDER\s+BY\s+", raw, maxsplit=1, flags=re.IGNORECASE)
+    filter_part = parts[0].strip()
+    order_part = parts[1].strip() if len(parts) == 2 else ""
 
     filters: dict[str, Any] = {}
-    clauses = re.split(r"\s+AND\s+", raw, flags=re.IGNORECASE)
+    if filter_part:
+        clauses = re.split(r"\s+AND\s+", filter_part, flags=re.IGNORECASE)
+    else:
+        clauses = []
     for clause in clauses:
         clause = clause.strip()
         if not clause:
@@ -70,7 +79,24 @@ def parse_jql(jql: str | None) -> dict[str, Any]:
             filters[field] = value
             continue
         raise ValueError(f"Unsupported JQL clause: {clause}")
-    return filters
+
+    order_by: list[tuple[str, str]] = []
+    if order_part:
+        for segment in order_part.split(","):
+            segment = segment.strip()
+            if not segment:
+                continue
+            tokens = segment.split()
+            field = tokens[0]
+            if len(tokens) == 1:
+                direction = "ASC"
+            elif len(tokens) == 2 and tokens[1].upper() in {"ASC", "DESC"}:
+                direction = tokens[1].upper()
+            else:
+                raise ValueError(f"Unsupported ORDER BY clause: {segment}")
+            order_by.append((field.lower(), direction.lower()))
+
+    return {"filters": filters, "order_by": order_by}
 
 
 def _normalise_value(raw: str) -> str:

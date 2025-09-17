@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
 import requests
+
+pytest.importorskip("openapi_core")
 
 from .openapi_validator import load_openapi, validate_response
 

@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--host", default="0.0.0.0", help="Host interface to bind the server"
     )
     parser.add_argument(
-        "--port", type=int, default=8000, help="TCP port to bind the server"
+        "--port", type=int, default=9000, help="TCP port to bind the server"
     )
     parser.add_argument(
         "--log-level", default="info", help="Log level passed to Uvicorn"

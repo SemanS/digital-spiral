@@ -29,6 +29,12 @@ python -m pip install -e .[test]
 mock-jira-server --port 9000
 ```
 
+Or run the prebuilt container image:
+
+```bash
+docker run -p 9000:9000 ghcr.io/<your-org>/mock-jira:latest
+```
+
 The server exposes FastAPI docs at `http://localhost:9000/docs`.
 
 Authenticated requests must include `Authorization: Bearer mock-token` unless

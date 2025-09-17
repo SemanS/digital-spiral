@@ -58,4 +58,4 @@ async def test_429_retry_after_and_headers(client):
     payload = resp.json()
     assert payload["errorMessages"] == ["Simulated rate limit"]
     assert payload["errors"] == {}
-    assert resp.headers.get("Retry-After") == "5"
+    assert resp.headers.get("Retry-After") == "1"

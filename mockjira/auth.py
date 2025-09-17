@@ -38,11 +38,11 @@ def auth_dependency(store: InMemoryStore) -> Callable:
                 message="Invalid API token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        if x_force_429:
+        if x_force_429 and store.should_force_429(token):
             raise ApiError(
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
                 message="Simulated rate limit",
-                headers={"Retry-After": "5"},
+                headers={"Retry-After": "1"},
             )
         try:
             cost = _request_cost(request)
