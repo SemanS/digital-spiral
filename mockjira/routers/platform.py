@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from ..auth import get_current_user
@@ -107,6 +109,9 @@ async def _search_impl(
     start_at: int,
     max_results: int,
     account_id: str,
+    *,
+    fields: Any = None,
+    expand: Any = None,
 ) -> dict:
     store = get_store(request)
     try:
@@ -117,30 +122,69 @@ async def _search_impl(
             "Error in JQL",
             field_errors={"jql": str(exc)},
         ) from exc
-    filters = parsed["filters"]
+    filters = dict(parsed["filters"])
     order_by = parsed["order_by"]
+    date_filters = parsed.get("date_filters", {})
 
-    def _convert_assignee(value: str) -> str:
-        if value.lower() == "currentuser()":
-            return account_id
-        if value.lower() == "unassigned":
-            return "unassigned"
+    def _resolve_user_filter(value: Any) -> Any:
+        if isinstance(value, str):
+            lowered = value.lower()
+            if lowered == "currentuser()":
+                return account_id
+            return value
+        if isinstance(value, list):
+            return [_resolve_user_filter(item) for item in value]
         return value
 
-    assignee_filter = filters.get("assignee")
-    if isinstance(assignee_filter, list):
-        filters["assignee"] = [_convert_assignee(v) for v in assignee_filter]
-    elif isinstance(assignee_filter, str):
-        filters["assignee"] = _convert_assignee(assignee_filter)
+    for field in ("assignee", "reporter"):
+        if field in filters:
+            filters[field] = _resolve_user_filter(filters[field])
 
-    results = store.search_issues(filters, order_by=order_by)
+    results = store.search_issues(
+        filters,
+        order_by=order_by or None,
+        date_filters=date_filters,
+    )
     page = paginate(results, start_at, max_results)
+
+    def _normalise_list(value: Any) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            items = [segment.strip() for segment in value.split(",")]
+            return [item for item in items if item]
+        if isinstance(value, (list, tuple)):
+            items: list[str] = []
+            for element in value:
+                if element is None:
+                    continue
+                items.append(str(element).strip())
+            return [item for item in items if item]
+        return None
+
+    fields_list = _normalise_list(fields)
+    expand_list = _normalise_list(expand)
+    expand_set = set(expand_list) if expand_list else None
+    fields_set = set(fields_list) if fields_list else None
+    if fields_set and "*all" in {item.lower() for item in fields_set}:
+        fields_set = None
+
+    issues_payload: list[dict] = []
+    for issue in page["values"]:
+        payload = issue.to_api(store, expand=expand_set)
+        if fields_set is not None:
+            payload_fields = payload.get("fields", {})
+            payload["fields"] = {
+                key: value for key, value in payload_fields.items() if key in fields_set
+            }
+        issues_payload.append(payload)
+
     return {
         "startAt": page["startAt"],
         "maxResults": page["maxResults"],
         "total": page["total"],
         "isLast": page["isLast"],
-        "issues": [issue.to_api(store) for issue in page["values"]],
+        "issues": issues_payload,
     }
 
 
@@ -150,9 +194,19 @@ async def search_issues(
     jql: str | None = Query(default=None),
     start_at: int = Query(default=0, alias="startAt"),
     max_results: int = Query(default=50, alias="maxResults"),
+    fields: str | None = Query(default=None),
+    expand: str | None = Query(default=None),
     account_id: str = Depends(get_current_user),
 ) -> dict:
-    return await _search_impl(request, jql, start_at, max_results, account_id)
+    return await _search_impl(
+        request,
+        jql,
+        start_at,
+        max_results,
+        account_id,
+        fields=fields,
+        expand=expand,
+    )
 
 
 @router.post("/search")
@@ -164,7 +218,15 @@ async def search_issues_post(
     jql = payload.get("jql")
     start_at = payload.get("startAt", 0)
     max_results = payload.get("maxResults", 50)
-    return await _search_impl(request, jql, start_at, max_results, account_id)
+    return await _search_impl(
+        request,
+        jql,
+        start_at,
+        max_results,
+        account_id,
+        fields=payload.get("fields"),
+        expand=payload.get("expand"),
+    )
 
 
 @router.get("/issue/{issue_id_or_key}/transitions")

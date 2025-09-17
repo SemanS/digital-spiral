@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import hmac
 import json
 import logging
 import os
@@ -318,6 +317,7 @@ class Issue:
             "maxResults": len(histories),
             "total": len(histories),
             "histories": histories,
+            "values": histories,
         }
 
 
@@ -352,7 +352,9 @@ class InMemoryStore:
         self.webhooks: dict[str, WebhookRegistration] = {}
         self.deliveries: list[dict[str, Any]] = []
         self._delivery_index: dict[str, dict[str, Any]] = {}
-        self._delivered_ids: deque[str] = deque(maxlen=2000)
+        self._recent_delivery_keys: deque[tuple[str, str]] = deque()
+        self._recent_delivery_lookup: set[tuple[str, str]] = set()
+        self._recent_delivery_window = 2000
         self.tokens: dict[str, str] = {}
         self.rate_calls: dict[str, deque[tuple[datetime, int]]] = defaultdict(deque)
         self.next_issue_id = 10000
@@ -749,6 +751,20 @@ class InMemoryStore:
 
     def create_issue_link(self, payload: dict[str, Any], actor_id: str) -> dict[str, Any]:
         type_info = payload.get("type") or {}
+        type_name = str(type_info.get("name", "")).strip()
+        if not type_name:
+            raise ValueError("Link type name is required")
+        normalised = type_name.lower()
+        if normalised not in {"blocks", "relates"}:
+            raise ValueError("Unsupported link type")
+        type_payload = {
+            "id": type_info.get("id"),
+            "name": type_info.get("name", type_name.title()),
+            "outward": type_info.get("outward")
+            or ("blocks" if normalised == "blocks" else "relates to"),
+            "inward": type_info.get("inward")
+            or ("is blocked by" if normalised == "blocks" else "relates to"),
+        }
         outward_key = payload.get("outwardIssue", {}).get("key")
         inward_key = payload.get("inwardIssue", {}).get("key")
         if not outward_key or not inward_key:
@@ -764,7 +780,7 @@ class InMemoryStore:
         outward_issue.links.append(
             {
                 "id": link_id,
-                "type": type_info,
+                "type": type_payload,
                 "outwardIssue": {
                     "id": inward_issue.id,
                     "key": inward_issue.key,
@@ -775,7 +791,7 @@ class InMemoryStore:
         inward_issue.links.append(
             {
                 "id": link_id,
-                "type": type_info,
+                "type": type_payload,
                 "inwardIssue": {
                     "id": outward_issue.id,
                     "key": outward_issue.key,
@@ -803,40 +819,90 @@ class InMemoryStore:
         filters: dict[str, Any],
         *,
         order_by: list[tuple[str, str]] | None = None,
+        date_filters: dict[str, dict[str, Any]] | None = None,
     ) -> list[Issue]:
         results = list(self.issues.values())
+
+        def _as_list(value: Any) -> list[Any]:
+            if isinstance(value, list):
+                return value
+            if value is None:
+                return []
+            return [value]
+
         project = filters.get("project")
         if project:
-            if isinstance(project, list):
-                allowed = set(project)
-            else:
-                allowed = {project}
-            results = [i for i in results if i.project_key in allowed]
+            allowed = {str(item).upper() for item in _as_list(project)}
+            results = [
+                issue for issue in results if issue.project_key.upper() in allowed
+            ]
+
         status = filters.get("status")
         if status:
-            if isinstance(status, str):
-                status_values = {status.lower()}
-            else:
-                status_values = {s.lower() for s in status}
+            status_values = {str(item).lower() for item in _as_list(status)}
             results = [
-                i
-                for i in results
-                if i.status(self).name.lower() in status_values
+                issue
+                for issue in results
+                if issue.status(self).name.lower() in status_values
             ]
+
+        reporter = filters.get("reporter")
+        if reporter:
+            reporter_values = {str(item) for item in _as_list(reporter)}
+            results = [
+                issue for issue in results if issue.reporter_id in reporter_values
+            ]
+
         assignee = filters.get("assignee")
         if assignee:
-            if isinstance(assignee, str):
-                values = {assignee.lower()}
-            else:
-                values = {a.lower() for a in assignee}
+            assignee_values = set()
+            include_unassigned = False
+            for item in _as_list(assignee):
+                if isinstance(item, str) and item.lower() == "unassigned":
+                    include_unassigned = True
+                    continue
+                assignee_values.add(str(item))
             results = [
-                i
-                for i in results
-                if (i.assignee_id or "unassigned").lower() in values
+                issue
+                for issue in results
+                if (
+                    (issue.assignee_id in assignee_values)
+                    or (include_unassigned and issue.assignee_id is None)
+                )
             ]
+
+        issue_type = filters.get("issuetype") or filters.get("type")
+        if issue_type:
+            raw_values = {str(item).lower() for item in _as_list(issue_type)}
+            results = [
+                issue
+                for issue in results
+                if (
+                    str(issue.issue_type_id).lower() in raw_values
+                    or issue.issue_type(self).name.lower() in raw_values
+                )
+            ]
+
+        date_filters = date_filters or {}
+        updated_filter = date_filters.get("updated") or {}
+        updated_gte = updated_filter.get("gte") if isinstance(updated_filter, dict) else None
+        if updated_gte:
+            threshold = self._parse_datetime(updated_gte)
+            if threshold:
+                results = [issue for issue in results if issue.updated >= threshold]
+
+        created_filter = date_filters.get("created") or {}
+        created_gte = created_filter.get("gte") if isinstance(created_filter, dict) else None
+        if created_gte:
+            threshold = self._parse_datetime(created_gte)
+            if threshold:
+                results = [issue for issue in results if issue.created >= threshold]
+
+        ordered = sorted(results, key=lambda issue: issue.key)
         if not order_by:
-            return sorted(results, key=lambda i: i.created)
-        ordered = list(results)
+            ordered.sort(key=lambda issue: issue.updated, reverse=True)
+            return ordered
+
         for field, direction in reversed(order_by):
             reverse = direction.lower() == "desc"
             ordered.sort(
@@ -1060,10 +1126,10 @@ class InMemoryStore:
     def dispatch_event(self, event_type: str, payload: dict[str, Any]) -> None:
         event_id = str(uuid.uuid4())
         now = datetime.now(UTC)
-        self._delivered_ids.append(event_id)
         self.deliveries.append(
             {
                 "event": event_type,
+                "eventId": event_id,
                 "payload": payload,
                 "timestamp": now.isoformat(),
             }
@@ -1092,7 +1158,15 @@ class InMemoryStore:
                 secret=registration.secret,
                 payload=payload,
                 record=record,
+                force=False,
             )
+
+    def _remember_delivery_key(self, key: tuple[str, str]) -> None:
+        self._recent_delivery_keys.append(key)
+        self._recent_delivery_lookup.add(key)
+        while len(self._recent_delivery_keys) > self._recent_delivery_window:
+            expired = self._recent_delivery_keys.popleft()
+            self._recent_delivery_lookup.discard(expired)
 
     def _schedule_delivery(
         self,
@@ -1104,6 +1178,7 @@ class InMemoryStore:
         secret: str | None,
         payload: dict[str, Any],
         record: dict[str, Any],
+        force: bool,
     ) -> None:
         meta = {
             "delivery_id": delivery_id,
@@ -1113,12 +1188,26 @@ class InMemoryStore:
             "secret": secret,
             "payload": payload,
             "record": record,
+            "force": force,
         }
         self._delivery_index[delivery_id] = meta
-        self._delivered_ids.append(event_id)
         record["status"] = "pending"
         record["attempts"] = 0
         record.pop("completedAt", None)
+        webhook_id = record.get("webhookId")
+        if webhook_id:
+            key = (str(webhook_id), event_id)
+            if not force and key in self._recent_delivery_lookup:
+                record["status"] = "duplicate"
+                record["completedAt"] = datetime.now(UTC).isoformat()
+                logger.info(
+                    "Skip duplicate webhook delivery id=%s event=%s event_id=%s",
+                    delivery_id,
+                    event_type,
+                    event_id,
+                )
+                return
+            self._remember_delivery_key(key)
         logger.info(
             "Queue webhook delivery id=%s event=%s event_id=%s url=%s",
             delivery_id,
@@ -1149,10 +1238,10 @@ class InMemoryStore:
         headers = {
             "Content-Type": "application/json",
             "X-MockJira-Event-Id": event_id,
-            "X-MockJira-Event-Type": event_type,
+            "X-MockJira-Event-Type": event_type.split(":", 1)[-1],
         }
         if secret:
-            digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+            digest = hashlib.sha256(secret.encode() + body).hexdigest()
             headers["X-MockJira-Signature"] = f"sha256={digest}"
 
         delays = [0.5, 1.0, 2.0]
@@ -1204,6 +1293,7 @@ class InMemoryStore:
             secret=meta["secret"],
             payload=meta["payload"],
             record=record,
+            force=True,
         )
         return record
 
@@ -1337,8 +1427,16 @@ class InMemoryStore:
         if not value:
             return None
         if isinstance(value, datetime):
-            return value
+            if value.tzinfo is None:
+                return value.replace(tzinfo=UTC)
+            return value.astimezone(UTC)
         try:
-            return datetime.fromisoformat(value)
+            raw = str(value).strip()
+            if raw.endswith("Z"):
+                raw = raw[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(raw)
         except Exception:  # pragma: no cover - invalid date fallback
             return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)

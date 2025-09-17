@@ -33,6 +33,7 @@ class ApiError(Exception):
 
 _JQL_IN_PATTERN = re.compile(r"^(?P<field>[\w.]+)\s+IN\s*\((?P<values>[^)]*)\)$", re.IGNORECASE)
 _JQL_EQUALS_PATTERN = re.compile(r"^(?P<field>[\w.]+)\s*=\s*(?P<value>.+)$")
+_JQL_GTE_PATTERN = re.compile(r"^(?P<field>[\w.]+)\s*>=\s*(?P<value>.+)$")
 
 
 def parse_jql(jql: str | None) -> dict[str, Any]:
@@ -40,7 +41,9 @@ def parse_jql(jql: str | None) -> dict[str, Any]:
 
     Returns a dictionary with ``filters`` and ``order_by`` keys. The ``filters``
     mapping contains normalised field/value pairs for equality and IN clauses.
-    ``order_by`` is a list of ``(field, direction)`` tuples in declaration order.
+    ``date_filters`` carries comparison operators (currently ``>=`` for
+    ``created`` and ``updated``). ``order_by`` is a list of ``(field,
+    direction)`` tuples in declaration order.
     """
 
     if not jql:
@@ -54,6 +57,7 @@ def parse_jql(jql: str | None) -> dict[str, Any]:
     order_part = parts[1].strip() if len(parts) == 2 else ""
 
     filters: dict[str, Any] = {}
+    date_filters: dict[str, dict[str, str]] = {}
     if filter_part:
         clauses = re.split(r"\s+AND\s+", filter_part, flags=re.IGNORECASE)
     else:
@@ -72,6 +76,14 @@ def parse_jql(jql: str | None) -> dict[str, Any]:
             ]
             filters[field] = values
             continue
+        gte_match = _JQL_GTE_PATTERN.match(clause)
+        if gte_match:
+            field = gte_match.group("field").lower()
+            if field not in {"updated", "created"}:
+                raise ValueError(f"Unsupported JQL clause: {clause}")
+            value = _normalise_value(gte_match.group("value"))
+            date_filters.setdefault(field, {})["gte"] = value
+            continue
         eq_match = _JQL_EQUALS_PATTERN.match(clause)
         if eq_match:
             field = eq_match.group("field").lower()
@@ -89,14 +101,17 @@ def parse_jql(jql: str | None) -> dict[str, Any]:
             tokens = segment.split()
             field = tokens[0]
             if len(tokens) == 1:
-                direction = "ASC"
+                if field.lower() == "updated":
+                    direction = "DESC"
+                else:
+                    direction = "ASC"
             elif len(tokens) == 2 and tokens[1].upper() in {"ASC", "DESC"}:
                 direction = tokens[1].upper()
             else:
                 raise ValueError(f"Unsupported ORDER BY clause: {segment}")
             order_by.append((field.lower(), direction.lower()))
 
-    return {"filters": filters, "order_by": order_by}
+    return {"filters": filters, "order_by": order_by, "date_filters": date_filters}
 
 
 def _normalise_value(raw: str) -> str:
