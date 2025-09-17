@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from collections import deque
@@ -62,14 +63,11 @@ def create_app(store: InMemoryStore | None = None) -> FastAPI:
             "timestamp": start.isoformat(),
         }
         app.state.request_log.append(entry)
-        logger.info(
-            "REQ %s %s -> %s %.2fms req_id=%s",
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration_ms,
-            req_id,
-        )
+        log_entry = {
+            **entry,
+            "message": "request",
+        }
+        logger.info(json.dumps(log_entry))
         return response
 
     app.include_router(platform.router, prefix="/rest/api/3")
