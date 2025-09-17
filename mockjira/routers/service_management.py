@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from ..auth import get_current_user
 from ..store import InMemoryStore
-from ..utils import paginate
+from ..utils import ApiError, paginate
 
 router = APIRouter(tags=["Service Management"])
 
@@ -54,7 +54,7 @@ async def get_request(
     store = get_store(request)
     service_request = store.service_requests.get(request_id)
     if not service_request:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Request not found")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "Request not found")
     issue = store.issues[service_request.issue_key]
     return service_request.to_api(issue, store)
 
@@ -72,6 +72,6 @@ async def update_approval(
     try:
         service_request = store.update_service_request(request_id, approval_id, approve)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise ApiError(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     issue = store.issues[service_request.issue_key]
     return service_request.to_api(issue, store)

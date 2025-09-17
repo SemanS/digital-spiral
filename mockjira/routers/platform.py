@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from ..auth import get_current_user
 from ..store import InMemoryStore
-from ..utils import paginate, parse_jql
+from ..utils import ApiError, paginate, parse_jql
 
 router = APIRouter(tags=["Platform"])
 
@@ -50,7 +50,7 @@ async def get_issue(
     store = get_store(request)
     issue = store.get_issue(issue_id_or_key)
     if not issue:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Issue not found")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "Issue not found")
     return issue.to_api(store)
 
 
@@ -64,7 +64,10 @@ async def create_issue(
     try:
         issue = store.create_issue(payload, reporter_id=account_id)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise ApiError(
+            status.HTTP_400_BAD_REQUEST,
+            str(exc),
+        ) from exc
     return issue.to_api(store)
 
 
@@ -78,7 +81,7 @@ async def update_issue(
     store = get_store(request)
     issue = store.get_issue(issue_id_or_key)
     if not issue:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Issue not found")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "Issue not found")
     issue = store.update_issue(issue_id_or_key, payload)
     return issue.to_api(store)
 
@@ -92,7 +95,14 @@ async def search_issues(
     account_id: str = Depends(get_current_user),
 ) -> dict:
     store = get_store(request)
-    filters = parse_jql(jql)
+    try:
+        filters = parse_jql(jql)
+    except ValueError as exc:
+        raise ApiError(
+            status.HTTP_400_BAD_REQUEST,
+            "Error in JQL",
+            field_errors={"jql": str(exc)},
+        ) from exc
 
     def _convert_assignee(value: str) -> str:
         if value.lower() == "currentuser()":
@@ -127,7 +137,7 @@ async def list_transitions(
     store = get_store(request)
     issue = store.get_issue(issue_id_or_key)
     if not issue:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Issue not found")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "Issue not found")
     transitions = store.get_transitions(issue)
     return {"transitions": [t.to_api() for t in transitions]}
 
@@ -142,15 +152,23 @@ async def apply_transition(
     store = get_store(request)
     issue = store.get_issue(issue_id_or_key)
     if not issue:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Issue not found")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "Issue not found")
     transition_data = payload.get("transition", {})
     transition_id = transition_data.get("id")
     if not transition_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Missing transition id")
+        raise ApiError(
+            status.HTTP_400_BAD_REQUEST,
+            "Transition id is required",
+            field_errors={"transition.id": "Missing transition id"},
+        )
     try:
         issue = store.apply_transition(issue, transition_id)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise ApiError(
+            status.HTTP_409_CONFLICT,
+            "Transition not allowed",
+            field_errors={"transition.id": str(exc)},
+        ) from exc
     return {"issue": issue.to_api(store)}
 
 
@@ -163,7 +181,7 @@ async def list_comments(
     store = get_store(request)
     issue = store.get_issue(issue_id_or_key)
     if not issue:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Issue not found")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "Issue not found")
     comments = [
         comment.to_api(store.users[comment.author_id]) for comment in issue.comments
     ]
@@ -185,10 +203,14 @@ async def create_comment(
     store = get_store(request)
     issue = store.get_issue(issue_id_or_key)
     if not issue:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Issue not found")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "Issue not found")
     body = payload.get("body")
     if not body:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Missing body")
+        raise ApiError(
+            status.HTTP_400_BAD_REQUEST,
+            "Comment body is required",
+            field_errors={"body": "Missing body"},
+        )
     comment = store.add_comment(issue, author_id=account_id, body=body)
     return comment.to_api(store.users[account_id])
 

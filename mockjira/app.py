@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from .auth import auth_dependency, get_current_user
 from .routers import agile, platform, service_management, webhooks
 from .store import InMemoryStore
+from .utils import ApiError
 
 
 def create_app(store: InMemoryStore | None = None) -> FastAPI:
@@ -30,6 +31,10 @@ def create_app(store: InMemoryStore | None = None) -> FastAPI:
     )
 
     app.dependency_overrides[get_current_user] = auth_dependency(store)
+
+    @app.exception_handler(ApiError)
+    async def _handle_api_error(_: Request, exc: ApiError):  # pragma: no cover - FastAPI wiring
+        return exc.to_response()
     app.include_router(platform.router, prefix="/rest/api/3")
     app.include_router(agile.router, prefix="/rest/agile/1.0")
     app.include_router(service_management.router, prefix="/rest/servicedeskapi")

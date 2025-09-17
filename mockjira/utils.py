@@ -5,6 +5,31 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
+from fastapi.responses import JSONResponse
+
+
+class ApiError(Exception):
+    """Domain-specific error for returning Jira-style error payloads."""
+
+    def __init__(
+        self,
+        status: int,
+        message: str,
+        field_errors: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.status = status
+        self.message = message
+        self.field_errors = field_errors or {}
+        self.headers = headers or {}
+        super().__init__(message)
+
+    def to_response(self) -> JSONResponse:
+        response = error_response(self.status, self.message, self.field_errors)
+        for key, value in self.headers.items():
+            response.headers[key] = value
+        return response
+
 
 _JQL_IN_PATTERN = re.compile(r"^(?P<field>[\w.]+)\s+IN\s*\((?P<values>[^)]*)\)$", re.IGNORECASE)
 _JQL_EQUALS_PATTERN = re.compile(r"^(?P<field>[\w.]+)\s*=\s*(?P<value>.+)$")
@@ -43,6 +68,8 @@ def parse_jql(jql: str | None) -> dict[str, Any]:
             field = eq_match.group("field").lower()
             value = _normalise_value(eq_match.group("value"))
             filters[field] = value
+            continue
+        raise ValueError(f"Unsupported JQL clause: {clause}")
     return filters
 
 
@@ -69,3 +96,17 @@ def paginate(items: Iterable[Any], start_at: int, max_results: int) -> dict[str,
         "isLast": is_last,
         "values": page,
     }
+
+
+def error_response(
+    status: int, message: str, field_errors: dict[str, str] | None = None
+) -> JSONResponse:
+    """Return a JSONResponse carrying the Jira-style error payload."""
+
+    return JSONResponse(
+        status_code=status,
+        content={
+            "errorMessages": [message],
+            "errors": field_errors or {},
+        },
+    )

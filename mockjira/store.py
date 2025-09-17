@@ -13,8 +13,16 @@ import httpx
 class RateLimitError(Exception):
     """Raised when a token exceeds its allowed request budget."""
 
-    def __init__(self, retry_after: int) -> None:
+    def __init__(
+        self,
+        retry_after: int,
+        *,
+        remaining: int | None = None,
+        reset_at: int | None = None,
+    ) -> None:
         self.retry_after = retry_after
+        self.remaining = remaining
+        self.reset_at = reset_at
         super().__init__("Rate limit exceeded")
 
 
@@ -284,7 +292,7 @@ class InMemoryStore:
         self.webhooks: dict[str, WebhookRegistration] = {}
         self.deliveries: list[dict[str, Any]] = []
         self.tokens: dict[str, str] = {}
-        self.rate_calls: dict[str, deque[datetime]] = defaultdict(deque)
+        self.rate_calls: dict[str, deque[tuple[datetime, int]]] = defaultdict(deque)
         self.next_issue_id = 10000
         self.next_comment_id = 20000
         self.next_request_id = 30000
@@ -513,17 +521,25 @@ class InMemoryStore:
     def is_valid_token(self, token: str) -> bool:
         return token in self.tokens
 
-    def register_call(self, token: str) -> None:
+    def register_call(self, token: str, cost: int = 1) -> None:
         limit = 100
         window = timedelta(seconds=60)
         now = datetime.now(UTC)
         bucket = self.rate_calls[token]
-        while bucket and now - bucket[0] > window:
+        while bucket and now - bucket[0][0] > window:
             bucket.popleft()
-        if len(bucket) >= limit:
-            retry_after = int((window - (now - bucket[0])).total_seconds())
-            raise RateLimitError(retry_after=retry_after)
-        bucket.append(now)
+        current_cost = sum(item_cost for _, item_cost in bucket)
+        if current_cost + cost > limit:
+            oldest = bucket[0][0] if bucket else now
+            retry_after = max(1, int((oldest + window - now).total_seconds()))
+            remaining = max(0, limit - current_cost)
+            reset_at = int((oldest + window).timestamp())
+            raise RateLimitError(
+                retry_after=retry_after,
+                remaining=remaining,
+                reset_at=reset_at,
+            )
+        bucket.append((now, cost))
 
     # ------------------------- Platform --------------------------------
     def list_projects(self) -> list[dict[str, Any]]:

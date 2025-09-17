@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request, status
 
 from ..auth import get_current_user
 from ..store import InMemoryStore
+from ..utils import ApiError
 
 router = APIRouter(tags=["Webhooks"])
 
@@ -41,7 +42,7 @@ async def delete_webhook(
 ) -> dict:
     store = get_store(request)
     if webhook_id not in store.webhooks:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Webhook not found")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "Webhook not found")
     store.delete_webhook(webhook_id)
     return {"status": "deleted"}
 

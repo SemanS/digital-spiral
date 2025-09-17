@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Callable
 
-from fastapi import Header, HTTPException, status
+from fastapi import Header, Request, status
 
 from .store import InMemoryStore, RateLimitError
+from .utils import ApiError
 
 
 async def get_current_user(  # pragma: no cover - replaced during app setup
@@ -20,36 +21,54 @@ def auth_dependency(store: InMemoryStore) -> Callable:
     """Return a dependency enforcing bearer token auth and rate limiting."""
 
     async def dependency(
+        request: Request,
         authorization: str | None = Header(default=None),
         x_force_429: str | None = Header(default=None),
     ) -> str:
         if authorization is None or not authorization.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing bearer token",
+            raise ApiError(
+                status=status.HTTP_401_UNAUTHORIZED,
+                message="Missing bearer token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         token = authorization.split(" ", 1)[1]
         if not store.is_valid_token(token):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API token",
+            raise ApiError(
+                status=status.HTTP_401_UNAUTHORIZED,
+                message="Invalid API token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         if x_force_429:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Simulated rate limit",
+            raise ApiError(
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+                message="Simulated rate limit",
                 headers={"Retry-After": "5"},
             )
         try:
-            store.register_call(token)
+            cost = _request_cost(request)
+            store.register_call(token, cost=cost)
         except RateLimitError as exc:  # pragma: no cover - protective branch
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Rate limit exceeded",
-                headers={"Retry-After": str(exc.retry_after)},
+            headers = {"Retry-After": str(exc.retry_after)}
+            if exc.remaining is not None:
+                headers["X-RateLimit-Remaining"] = str(exc.remaining)
+            if exc.reset_at is not None:
+                headers["X-RateLimit-Reset"] = str(exc.reset_at)
+            raise ApiError(
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+                message="Rate limit exceeded",
+                headers=headers,
             ) from exc
         return store.tokens[token]
 
     return dependency
+
+
+def _request_cost(request: Request) -> int:
+    """Return an approximate request cost for the rate limiter."""
+
+    path = request.url.path
+    if path.endswith("/search"):
+        return 5
+    if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        return 2
+    return 1

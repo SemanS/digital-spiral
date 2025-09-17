@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from ..auth import get_current_user
 from ..store import InMemoryStore
-from ..utils import paginate
+from ..utils import ApiError, paginate
 
 router = APIRouter(tags=["Agile"])
 
@@ -74,7 +74,7 @@ async def backlog(
 ) -> dict:
     store = get_store(request)
     if board_id not in store.boards:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Board not found")
+        raise ApiError(status.HTTP_404_NOT_FOUND, "Board not found")
     issues = store.backlog_issues(board_id)
     page = paginate([issue.to_api(store) for issue in issues], start_at, max_results)
     return {
