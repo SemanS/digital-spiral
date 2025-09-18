@@ -1,0 +1,14 @@
+{
+  "name": "digital-spiral-forge-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Forge app for integrating Digital Spiral orchestrator with Jira Cloud.",
+  "scripts": {
+    "lint": "echo \"No lint configured\"",
+    "build": "forge deploy"
+  },
+  "dependencies": {
+    "@forge/api": "^4.9.0",
+    "@forge/ui": "^1.7.0"
+  }
+}
