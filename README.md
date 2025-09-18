@@ -50,6 +50,18 @@ MOCK_JIRA_SEED_CONFIG=scripts/seed_profiles/support.json \
   docker compose up mock-jira-seed
 ```
 
+Curated profiles live under `scripts/seed_profiles/`. In addition to the
+default generator-driven setup, you can load declarative datasets, such as the
+new `docker_manual_onboarding.json` profile that mirrors tasks from the official
+[Docker manuals](https://docs.docker.com/manuals/) for documentation and
+DevOps teams:
+
+```bash
+python scripts/generate_dummy_jira.py \
+  --config scripts/seed_profiles/docker_manual_onboarding.json \
+  --out artifacts/docker-manual-seed.json
+```
+
 Each profile can either list explicit `seed_data` (matching the structure
 returned by `/_mock/seed/export`) or a `generator` object with
 `GenConfig` overrides. The same config file can be used with the standalone
