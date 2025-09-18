@@ -386,36 +386,10 @@ class InMemoryStore:
         )
         self._force_429_tokens: set[str] = set()
 
-    # ------------------------------------------------------------------
-    # Factory
-    # ------------------------------------------------------------------
-    @classmethod
-    def with_seed_data(cls) -> "InMemoryStore":
-        store = cls()
-        store._seed()
-        return store
+        self._install_default_metadata()
 
-    # ------------------------------------------------------------------
-    def _seed(self) -> None:
-        self.tokens = {"mock-token": "5b10a2844c20165700ede21g"}
-
-        self.users = {
-            "5b10a2844c20165700ede21g": User(
-                account_id="5b10a2844c20165700ede21g",
-                display_name="Alice Johnson",
-                email="alice@example.com",
-            ),
-            "5b10a2844c20165700ede20f": User(
-                account_id="5b10a2844c20165700ede20f",
-                display_name="Bob Smith",
-                email="bob@example.com",
-            ),
-            "5b10a2844c20165700ede20e": User(
-                account_id="5b10a2844c20165700ede20e",
-                display_name="Carol Williams",
-                email="carol@example.com",
-            ),
-        }
+    def _install_default_metadata(self) -> None:
+        """Initialise status categories, statuses, transitions and issue types."""
 
         to_do = StatusCategory(id=2, key="new", name="To Do")
         in_progress = StatusCategory(id=4, key="indeterminate", name="In Progress")
@@ -450,6 +424,44 @@ class InMemoryStore:
             ],
         }
 
+        self.issue_types = {
+            "10000": IssueType(id="10000", name="Bug"),
+            "10001": IssueType(id="10001", name="Task"),
+            "10002": IssueType(id="10002", name="Story"),
+            "10003": IssueType(id="10003", name="Service Request"),
+        }
+
+    # ------------------------------------------------------------------
+    # Factory
+    # ------------------------------------------------------------------
+    @classmethod
+    def with_seed_data(cls) -> "InMemoryStore":
+        store = cls()
+        store._seed()
+        return store
+
+    # ------------------------------------------------------------------
+    def _seed(self) -> None:
+        self.tokens = {"mock-token": "5b10a2844c20165700ede21g"}
+
+        self.users = {
+            "5b10a2844c20165700ede21g": User(
+                account_id="5b10a2844c20165700ede21g",
+                display_name="Alice Johnson",
+                email="alice@example.com",
+            ),
+            "5b10a2844c20165700ede20f": User(
+                account_id="5b10a2844c20165700ede20f",
+                display_name="Bob Smith",
+                email="bob@example.com",
+            ),
+            "5b10a2844c20165700ede20e": User(
+                account_id="5b10a2844c20165700ede20e",
+                display_name="Carol Williams",
+                email="carol@example.com",
+            ),
+        }
+
         self.projects = {
             "DEV": Project(
                 id="10000",
@@ -465,13 +477,6 @@ class InMemoryStore:
                 project_type="service_desk",
                 lead_account_id="5b10a2844c20165700ede20f",
             ),
-        }
-
-        self.issue_types = {
-            "10000": IssueType(id="10000", name="Bug"),
-            "10001": IssueType(id="10001", name="Task"),
-            "10002": IssueType(id="10002", name="Story"),
-            "10003": IssueType(id="10003", name="Service Request"),
         }
 
         self.boards = {
@@ -1407,25 +1412,128 @@ class InMemoryStore:
             "projects": [asdict(project) for project in self.projects.values()],
             "issue_types": [asdict(it) for it in self.issue_types.values()],
             "issues": [self._issue_to_seed(issue) for issue in self.issues.values()],
+            "boards": [asdict(board) for board in self.boards.values()],
+            "sprints": [self._sprint_to_seed(sprint) for sprint in self.sprints.values()],
+            "service_requests": [
+                {
+                    "id": request.id,
+                    "issue_key": request.issue_key,
+                    "request_type_id": request.request_type_id,
+                    "approvals": list(request.approvals),
+                }
+                for request in self.service_requests.values()
+            ],
+            "tokens": dict(self.tokens),
         }
 
     def import_seed(self, payload: dict[str, Any]) -> None:
+        self._install_default_metadata()
+
+        self.webhooks = {}
+        self.deliveries = []
+        self._delivery_index.clear()
+        self._recent_delivery_keys.clear()
+        self._recent_delivery_lookup.clear()
+        self.webhook_logs = []
+
         self.users = {
             item["account_id"]: User(**item)
             for item in payload.get("users", [])
+            if item.get("account_id")
         }
         self.projects = {
             item["key"]: Project(**item)
             for item in payload.get("projects", [])
+            if item.get("key")
         }
-        self.issue_types = {
-            item["id"]: IssueType(**item)
-            for item in payload.get("issue_types", [])
-        }
+
+        issue_types = payload.get("issue_types")
+        if issue_types:
+            self.issue_types = {
+                item["id"]: IssueType(**item)
+                for item in issue_types
+                if item.get("id")
+            }
+
+        self.boards = {}
+        for item in payload.get("boards", []):
+            try:
+                board_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            project_key = item.get("project_key") or item.get("projectKey")
+            board = Board(
+                id=board_id,
+                name=item.get("name", f"Board {board_id}"),
+                type=item.get("type", "scrum"),
+                project_key=str(project_key) if project_key else "DEV",
+            )
+            self.boards[board.id] = board
+
+        self.sprints = {}
+        max_sprint_id = self.next_sprint_id
+        for item in payload.get("sprints", []):
+            try:
+                sprint_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            board_ref = item.get("board_id") or item.get("boardId")
+            try:
+                board_id = int(board_ref) if board_ref is not None else None
+            except (TypeError, ValueError):
+                board_id = None
+            sprint = Sprint(
+                id=sprint_id,
+                board_id=board_id or 0,
+                name=item.get("name", f"Sprint {sprint_id}"),
+                state=item.get("state", "future"),
+                start_date=self._parse_datetime(
+                    item.get("start_date") or item.get("startDate")
+                ),
+                end_date=self._parse_datetime(
+                    item.get("end_date") or item.get("endDate")
+                ),
+                goal=item.get("goal"),
+            )
+            self.sprints[sprint.id] = sprint
+            max_sprint_id = max(max_sprint_id, sprint.id + 1)
+        if self.sprints:
+            self.next_sprint_id = max_sprint_id
+        else:
+            self.next_sprint_id = 5000
+
+        tokens = payload.get("tokens")
+        if isinstance(tokens, dict):
+            self.tokens = {str(key): str(value) for key, value in tokens.items()}
+
+        self.service_requests = {}
+        max_request_id = self.next_request_id
+        for item in payload.get("service_requests", []):
+            request = ServiceRequest(
+                id=str(item.get("id")),
+                issue_key=str(item.get("issue_key") or item.get("issueKey")),
+                request_type_id=str(
+                    item.get("request_type_id") or item.get("requestTypeId") or "100"
+                ),
+                approvals=list(item.get("approvals", [])),
+            )
+            if not request.issue_key:
+                continue
+            self.service_requests[request.id] = request
+            try:
+                max_request_id = max(max_request_id, int(request.id) + 1)
+            except (TypeError, ValueError):
+                continue
+        if self.service_requests:
+            self.next_request_id = max_request_id
+        else:
+            self.next_request_id = 30000
+
         self.issues = {}
         self.issue_counter = defaultdict(int)
         self.next_issue_id = 10000
         self.next_comment_id = 20000
+        max_link_id = self.next_link_id
         for item in payload.get("issues", []):
             issue = self._issue_from_seed(item)
             self.issues[issue.key] = issue
@@ -1436,10 +1544,32 @@ class InMemoryStore:
             self.issue_counter[issue.project_key] = max(
                 self.issue_counter[issue.project_key], seq
             )
-            self.next_issue_id = max(self.next_issue_id, int(issue.id) + 1)
+            try:
+                self.next_issue_id = max(self.next_issue_id, int(issue.id) + 1)
+            except (TypeError, ValueError):
+                pass
             if issue.comments:
-                last_comment_id = max(int(c.id) for c in issue.comments)
-                self.next_comment_id = max(self.next_comment_id, last_comment_id + 1)
+                comment_ids = [
+                    int(comment.id)
+                    for comment in issue.comments
+                    if str(comment.id).isdigit()
+                ]
+                if comment_ids:
+                    self.next_comment_id = max(self.next_comment_id, max(comment_ids) + 1)
+            for link in issue.links:
+                raw_id = link.get("id") if isinstance(link, dict) else None
+                if raw_id is None:
+                    continue
+                try:
+                    max_link_id = max(max_link_id, int(raw_id) + 1)
+                except (TypeError, ValueError):
+                    continue
+        self.next_link_id = max_link_id if max_link_id != self.next_link_id else 60000
+
+    def load_from_json(self, payload: dict[str, Any]) -> None:
+        """Compatibility wrapper for seed loading APIs."""
+
+        self.import_seed(payload)
 
     def normalize_adf(self, value: Any) -> dict[str, Any]:
         if isinstance(value, dict) and value.get("type") == "doc":
@@ -1449,47 +1579,156 @@ class InMemoryStore:
         raise ValueError("Unsupported ADF payload")
 
     def _issue_to_seed(self, issue: Issue) -> dict[str, Any]:
-        payload = asdict(issue)
-        payload["created"] = issue.created.isoformat()
-        payload["updated"] = issue.updated.isoformat()
+        payload = {
+            "id": issue.id,
+            "key": issue.key,
+            "project_key": issue.project_key,
+            "issue_type_id": issue.issue_type_id,
+            "summary": issue.summary,
+            "description": issue.description,
+            "status_id": issue.status_id,
+            "reporter_id": issue.reporter_id,
+            "assignee_id": issue.assignee_id,
+            "labels": list(issue.labels),
+            "created": issue.created.isoformat(),
+            "updated": issue.updated.isoformat(),
+            "sprint_id": issue.sprint_id,
+            "custom_fields": dict(issue.custom_fields),
+            "links": [dict(link) for link in issue.links],
+            "changelog": [dict(entry) for entry in issue.changelog],
+        }
         payload["comments"] = [
             {
-                **asdict(comment),
+                "id": comment.id,
+                "author_id": comment.author_id,
+                "body": comment.body,
                 "created": comment.created.isoformat(),
             }
             for comment in issue.comments
         ]
         return payload
 
+    def _sprint_to_seed(self, sprint: Sprint) -> dict[str, Any]:
+        return {
+            "id": sprint.id,
+            "board_id": sprint.board_id,
+            "name": sprint.name,
+            "state": sprint.state,
+            "start_date": sprint.start_date.isoformat() if sprint.start_date else None,
+            "end_date": sprint.end_date.isoformat() if sprint.end_date else None,
+            "goal": sprint.goal,
+        }
+
     def _issue_from_seed(self, payload: dict[str, Any]) -> Issue:
-        comments = [
-            Comment(
-                id=str(comment["id"]),
-                author_id=comment.get("author_id") or comment.get("authorId"),
-                body=comment.get("body", {}),
-                created=self._parse_datetime(comment.get("created"))
-                or datetime.now(UTC),
+        comments: list[Comment] = []
+        for comment in payload.get("comments", []):
+            if not isinstance(comment, dict):
+                continue
+            raw_body = comment.get("body")
+            if raw_body is None:
+                body = self._adf("")
+            else:
+                try:
+                    body = self.normalize_adf(raw_body)
+                except ValueError:
+                    body = self._adf(str(raw_body))
+            comments.append(
+                Comment(
+                    id=str(comment.get("id")),
+                    author_id=comment.get("author_id") or comment.get("authorId"),
+                    body=body,
+                    created=self._parse_datetime(comment.get("created"))
+                    or datetime.now(UTC),
+                )
             )
-            for comment in payload.get("comments", [])
-        ]
+
+        raw_description = payload.get("description")
+        if raw_description is None:
+            description = self._adf("")
+        else:
+            try:
+                description = self.normalize_adf(raw_description)
+            except ValueError:
+                description = self._adf(str(raw_description))
+
+        custom_fields = (
+            payload.get("custom_fields")
+            or payload.get("customFields")
+            or {}
+        )
+        if not isinstance(custom_fields, dict):
+            custom_fields = {}
+
+        links = [dict(link) for link in payload.get("links", []) if isinstance(link, dict)]
+
+        changelog_entries: list[dict[str, Any]] = []
+        for entry in payload.get("changelog", []):
+            if not isinstance(entry, dict):
+                continue
+            items = entry.get("items")
+            if not items:
+                items = [
+                    {
+                        "field": entry.get("field"),
+                        "from": entry.get("from"),
+                        "fromString": entry.get("fromString"),
+                        "to": entry.get("to"),
+                        "toString": entry.get("toString"),
+                    }
+                ]
+            else:
+                normalised_items = []
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    normalised_items.append(
+                        {
+                            "field": item.get("field"),
+                            "from": item.get("from"),
+                            "fromString": item.get("fromString"),
+                            "to": item.get("to"),
+                            "toString": item.get("toString"),
+                        }
+                    )
+                items = normalised_items
+            created = entry.get("created")
+            if isinstance(created, datetime):
+                created_value = created.isoformat()
+            elif created is None:
+                created_value = datetime.now(UTC).isoformat()
+            else:
+                created_value = str(created)
+            changelog_entries.append(
+                {
+                    "id": entry.get("id"),
+                    "created": created_value,
+                    "author": entry.get("author"),
+                    "items": items,
+                }
+            )
+
         issue = Issue(
-            id=str(payload["id"]),
-            key=payload["key"],
-            project_key=payload.get("project_key", payload.get("projectKey")),
-            issue_type_id=payload.get("issue_type_id", payload.get("issueTypeId", "10001")),
+            id=str(payload.get("id")),
+            key=str(payload.get("key")),
+            project_key=str(payload.get("project_key") or payload.get("projectKey")),
+            issue_type_id=str(
+                payload.get("issue_type_id")
+                or payload.get("issueTypeId")
+                or "10001"
+            ),
             summary=payload.get("summary", "Imported issue"),
-            description=payload.get("description", self._adf("")),
-            status_id=payload.get("status_id", "1"),
-            reporter_id=payload.get("reporter_id"),
-            assignee_id=payload.get("assignee_id"),
-            labels=payload.get("labels", []),
+            description=description,
+            status_id=str(payload.get("status_id") or "1"),
+            reporter_id=payload.get("reporter_id") or payload.get("reporterId"),
+            assignee_id=payload.get("assignee_id") or payload.get("assigneeId"),
+            labels=list(payload.get("labels", [])),
             created=self._parse_datetime(payload.get("created")) or datetime.now(UTC),
             updated=self._parse_datetime(payload.get("updated")) or datetime.now(UTC),
-            sprint_id=payload.get("sprint_id"),
+            sprint_id=payload.get("sprint_id") or payload.get("sprintId"),
             comments=comments,
-            custom_fields=payload.get("custom_fields", {}),
-            links=payload.get("links", []),
-            changelog=payload.get("changelog", []),
+            custom_fields=custom_fields,
+            links=links,
+            changelog=changelog_entries,
         )
         return issue
 

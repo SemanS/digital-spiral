@@ -6,6 +6,8 @@ from importlib import metadata
 
 from fastapi import APIRouter, Request
 
+from ..auth import auth_dependency, get_current_user
+from ..fixtures.generator import GenConfig, generate_store
 from ..store import InMemoryStore
 
 router = APIRouter(tags=["Mock"])
@@ -13,6 +15,17 @@ router = APIRouter(tags=["Mock"])
 
 def get_store(request: Request) -> InMemoryStore:
     return request.app.state.store
+
+
+def _counts(store: InMemoryStore) -> dict[str, int]:
+    return {
+        "projects": len(store.projects),
+        "issues": len(store.issues),
+        "users": len(store.users),
+        "boards": len(store.boards),
+        "sprints": len(store.sprints),
+        "requests": len(store.service_requests),
+    }
 
 
 @router.get("/_mock/health")
@@ -50,7 +63,29 @@ async def export_seed(request: Request) -> dict:
 async def import_seed(request: Request, payload: dict) -> dict:
     store = get_store(request)
     store.import_seed(payload)
-    return {"status": "imported", "issues": len(store.issues)}
+    return {"status": "imported", "counts": _counts(store)}
+
+
+@router.post("/_mock/seed/load")
+async def load_seed(request: Request, payload: dict) -> dict:
+    store = get_store(request)
+    store.import_seed(payload)
+    return {"status": "loaded", "counts": _counts(store)}
+
+
+@router.post("/_mock/seed/generate")
+async def generate_seed(request: Request, payload: dict | None = None) -> dict:
+    body = payload or {}
+    cfg_kwargs = {
+        key: body[key]
+        for key in GenConfig.__annotations__.keys()
+        if key in body
+    }
+    cfg = GenConfig(**cfg_kwargs)
+    store = generate_store(cfg)
+    request.app.state.store = store
+    request.app.dependency_overrides[get_current_user] = auth_dependency(store)
+    return {"status": "ok", "counts": _counts(store)}
 
 
 @router.get("/_mock/trace/{request_id}")

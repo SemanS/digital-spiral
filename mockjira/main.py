@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 import uvicorn
 
@@ -26,6 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Start with an empty store instead of the default seed data",
     )
+    parser.add_argument(
+        "--seed-file",
+        help="Path to a seed JSON file to preload",
+        default=None,
+    )
     return parser
 
 
@@ -33,7 +40,19 @@ def run(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    store = None if args.no_seed else InMemoryStore.with_seed_data()
+    if args.seed_file:
+        store = InMemoryStore()
+    elif args.no_seed:
+        store = InMemoryStore()
+    else:
+        store = InMemoryStore.with_seed_data()
+
+    if args.seed_file:
+        seed_path = Path(args.seed_file)
+        with seed_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        store.load_from_json(payload)
+
     app = create_app(store)
 
     config = uvicorn.Config(
