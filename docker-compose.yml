@@ -1,0 +1,26 @@
+version: "3.9"
+services:
+  mock-jira:
+    image: ghcr.io/yourorg/mock-jira:latest
+    container_name: mock-jira
+    ports: ["9000:9000"]
+    environment:
+      - LOG_LEVEL=info
+
+  orchestrator:
+    image: python:3.12-slim
+    container_name: ds-orchestrator
+    working_dir: /app
+    volumes:
+      - ./orchestrator:/app
+      - ./clients/python:/app/clients/python
+    command: bash -lc "pip install -r requirements.txt && uvicorn app:app --host 0.0.0.0 --port 7010 --reload"
+    ports: ["7010:7010"]
+    environment:
+      - JIRA_BASE_URL=http://mock-jira:9000
+      - JIRA_TOKEN=mock-token
+      - WEBHOOK_SECRET=dev-secret
+      - LEDGER_BACKEND=memory
+      - SIGNATURE_VERSION=2
+    depends_on:
+      - mock-jira
