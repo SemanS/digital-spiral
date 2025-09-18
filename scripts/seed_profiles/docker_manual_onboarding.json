@@ -1,0 +1,263 @@
+{
+  "description": "Curated dataset representing a documentation team walking through the Docker manuals and infrastructure setup.",
+  "seed_data": {
+    "tokens": {
+      "mock-token": "acct-docker-admin",
+      "docs-token": "acct-techwriter"
+    },
+    "users": [
+      {
+        "account_id": "acct-docker-admin",
+        "display_name": "Dana Docker",
+        "email": "dana.docker@example.com",
+        "time_zone": "Europe/Bratislava"
+      },
+      {
+        "account_id": "acct-techwriter",
+        "display_name": "Tomas Technical",
+        "email": "tomas.techwriter@example.com",
+        "time_zone": "Europe/Bratislava"
+      },
+      {
+        "account_id": "acct-devops",
+        "display_name": "Oskar Ops",
+        "email": "oskar.ops@example.com",
+        "time_zone": "Europe/Bratislava"
+      },
+      {
+        "account_id": "acct-support",
+        "display_name": "Silvia Support",
+        "email": "silvia.support@example.com",
+        "time_zone": "Europe/Bratislava"
+      }
+    ],
+    "issue_types": [
+      {"id": "10000", "name": "Bug"},
+      {"id": "10001", "name": "Task"},
+      {"id": "10002", "name": "Story"},
+      {"id": "10003", "name": "Service Request"}
+    ],
+    "projects": [
+      {
+        "id": "32000",
+        "key": "DOC",
+        "name": "Docker Documentation",
+        "project_type": "software",
+        "lead_account_id": "acct-techwriter"
+      },
+      {
+        "id": "32001",
+        "key": "OPS",
+        "name": "Docker Operations",
+        "project_type": "service_desk",
+        "lead_account_id": "acct-support"
+      }
+    ],
+    "boards": [
+      {
+        "id": 12,
+        "name": "DOC Scrum",
+        "type": "scrum",
+        "project_key": "DOC"
+      }
+    ],
+    "sprints": [
+      {
+        "id": 220,
+        "board_id": 12,
+        "name": "Sprint 1",
+        "state": "active",
+        "start_date": "2024-10-01T08:00:00+00:00",
+        "end_date": "2024-10-15T08:00:00+00:00",
+        "goal": "Publish the Docker Engine installation revamp"
+      },
+      {
+        "id": 221,
+        "board_id": 12,
+        "name": "Sprint 2",
+        "state": "future",
+        "start_date": "2024-10-15T08:00:00+00:00",
+        "end_date": "2024-10-29T08:00:00+00:00",
+        "goal": "Complete Compose sample library"
+      }
+    ],
+    "issues": [
+      {
+        "id": "41000",
+        "key": "DOC-1",
+        "project_key": "DOC",
+        "issue_type_id": "10001",
+        "summary": "Review Docker Engine installation guide",
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Align Linux, macOS and Windows instructions with the latest Docker manual chapters."
+                }
+              ]
+            }
+          ]
+        },
+        "status_id": "3",
+        "reporter_id": "acct-techwriter",
+        "assignee_id": "acct-techwriter",
+        "labels": ["documentation", "manual"],
+        "created": "2024-09-30T09:05:00+00:00",
+        "updated": "2024-10-03T14:20:00+00:00",
+        "sprint_id": 220,
+        "comments": [
+          {
+            "id": "51000",
+            "author_id": "acct-devops",
+            "created": "2024-10-02T11:45:00+00:00",
+            "body": {
+              "type": "doc",
+              "version": 1,
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Verified the CLI steps on Ubuntu 22.04 following https://docs.docker.com/manuals/; screenshots pending."
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "custom_fields": {
+          "customfield_doc_stage": "review"
+        },
+        "links": [],
+        "changelog": [
+          {
+            "id": "61000",
+            "created": "2024-10-01T10:30:00+00:00",
+            "author": {"accountId": "acct-techwriter"},
+            "items": [
+              {
+                "field": "status",
+                "from": "1",
+                "fromString": "To Do",
+                "to": "3",
+                "toString": "In Progress"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "41001",
+        "key": "DOC-2",
+        "project_key": "DOC",
+        "issue_type_id": "10002",
+        "summary": "Produce Docker Desktop onboarding tutorial",
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Draft a guided tour that mirrors the Docker manual walkthrough including volumes, networks and Compose."
+                }
+              ]
+            }
+          ]
+        },
+        "status_id": "1",
+        "reporter_id": "acct-docker-admin",
+        "assignee_id": "acct-techwriter",
+        "labels": ["onboarding", "tutorial"],
+        "created": "2024-10-01T08:15:00+00:00",
+        "updated": "2024-10-01T08:15:00+00:00",
+        "sprint_id": 221,
+        "comments": [],
+        "custom_fields": {
+          "customfield_doc_stage": "draft"
+        },
+        "links": [
+          {
+            "id": "62000",
+            "type": "blocks",
+            "target": "DOC-1"
+          }
+        ],
+        "changelog": []
+      },
+      {
+        "id": "42000",
+        "key": "OPS-1",
+        "project_key": "OPS",
+        "issue_type_id": "10003",
+        "summary": "Validate Compose sample for containerised docs",
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Ensure the docker compose example from the manuals starts cleanly with default environment variables."
+                }
+              ]
+            }
+          ]
+        },
+        "status_id": "1",
+        "reporter_id": "acct-support",
+        "assignee_id": "acct-devops",
+        "labels": ["compose", "support"],
+        "created": "2024-10-02T07:40:00+00:00",
+        "updated": "2024-10-02T07:40:00+00:00",
+        "sprint_id": null,
+        "comments": [
+          {
+            "id": "51001",
+            "author_id": "acct-support",
+            "created": "2024-10-02T08:05:00+00:00",
+            "body": {
+              "type": "doc",
+              "version": 1,
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Customer linked the failing command sequence from the Docker manual container networking chapter."
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "custom_fields": {
+          "customfield_environment": "staging"
+        },
+        "links": [],
+        "changelog": []
+      }
+    ],
+    "service_requests": [
+      {
+        "id": "52000",
+        "issue_key": "OPS-1",
+        "request_type_id": "400",
+        "approvals": []
+      }
+    ]
+  }
+}
