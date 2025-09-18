@@ -206,6 +206,83 @@ async def test_order_by_desc(client):
 
 
 @pytest.mark.asyncio
+async def test_seed_generate_counts_and_changelog(client):
+    resp = await client.post(
+        "/_mock/seed/generate",
+        json={
+            "seed": 123,
+            "software_projects": 2,
+            "servicedesk_projects": 1,
+            "issues_per_project": 5,
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert resp.status_code == 200
+    counts = resp.json()["counts"]
+    assert counts["projects"] == 3
+    assert counts["issues"] == 15
+    assert counts["users"] == 8
+    assert counts["boards"] == 2
+    assert counts["sprints"] == 16
+    assert counts["requests"] == 5
+
+    project_resp = await client.get("/rest/api/3/project", headers=AUTH_HEADERS)
+    assert project_resp.status_code == 200
+    keys = {project["key"] for project in project_resp.json()["values"]}
+    assert {"DEV1", "DEV2", "SUP1"}.issubset(keys)
+
+    search_resp = await client.get(
+        "/rest/api/3/search",
+        params={"jql": "project = DEV1"},
+        headers=AUTH_HEADERS,
+    )
+    assert search_resp.status_code == 200
+    issues = search_resp.json()["issues"]
+    assert issues
+
+    issue_key = issues[0]["key"]
+    issue_resp = await client.get(
+        f"/rest/api/3/issue/{issue_key}",
+        params={"expand": "changelog"},
+        headers=AUTH_HEADERS,
+    )
+    assert issue_resp.status_code == 200
+    payload = issue_resp.json()
+    assert "changelog" in payload
+    assert isinstance(payload["changelog"].get("histories"), list)
+
+
+@pytest.mark.asyncio
+async def test_seed_load_trimmed_payload(client):
+    export_resp = await client.get("/_mock/seed/export", headers=AUTH_HEADERS)
+    assert export_resp.status_code == 200
+    payload = export_resp.json()
+
+    first_issue = payload["issues"][0]
+    payload["issues"] = [first_issue]
+    payload["service_requests"] = [
+        request
+        for request in payload.get("service_requests", [])
+        if request.get("issue_key") == first_issue["key"]
+    ]
+
+    load_resp = await client.post(
+        "/_mock/seed/load",
+        json=payload,
+        headers=AUTH_HEADERS,
+    )
+    assert load_resp.status_code == 200
+    counts = load_resp.json()["counts"]
+    assert counts["issues"] == 1
+
+    issue_resp = await client.get(
+        f"/rest/api/3/issue/{first_issue['key']}",
+        headers=AUTH_HEADERS,
+    )
+    assert issue_resp.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_current_user_function(client):
     resp = await client.post(
         "/rest/api/3/search",
