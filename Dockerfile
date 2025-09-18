@@ -13,6 +13,7 @@ COPY pyproject.toml ./
 COPY mockjira ./mockjira
 COPY clients ./clients
 COPY examples ./examples
+COPY scripts ./scripts
 COPY requirements-contract.txt ./requirements-contract.txt
 
 RUN pip install --no-cache-dir .

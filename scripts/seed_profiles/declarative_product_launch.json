@@ -1,0 +1,227 @@
+{
+  "seed_data": {
+    "tokens": {
+      "mock-token": "acct-alice",
+      "support-token": "acct-support"
+    },
+    "users": [
+      {
+        "account_id": "acct-alice",
+        "display_name": "Alice Product",
+        "email": "alice.product@example.com",
+        "time_zone": "Europe/Bratislava"
+      },
+      {
+        "account_id": "acct-bob",
+        "display_name": "Bob Platform",
+        "email": "bob.platform@example.com",
+        "time_zone": "Europe/Bratislava"
+      },
+      {
+        "account_id": "acct-carol",
+        "display_name": "Carol QA",
+        "email": "carol.qa@example.com",
+        "time_zone": "Europe/Bratislava"
+      },
+      {
+        "account_id": "acct-support",
+        "display_name": "Support Agent",
+        "email": "support@example.com",
+        "time_zone": "Europe/Bratislava"
+      }
+    ],
+    "issue_types": [
+      {"id": "10000", "name": "Bug"},
+      {"id": "10001", "name": "Task"},
+      {"id": "10002", "name": "Story"},
+      {"id": "10003", "name": "Service Request"}
+    ],
+    "projects": [
+      {
+        "id": "20000",
+        "key": "DEV",
+        "name": "Product Launch",
+        "project_type": "software",
+        "lead_account_id": "acct-alice"
+      },
+      {
+        "id": "20001",
+        "key": "SUP",
+        "name": "Customer Support",
+        "project_type": "service_desk",
+        "lead_account_id": "acct-support"
+      }
+    ],
+    "boards": [
+      {
+        "id": 1,
+        "name": "DEV Scrum",
+        "type": "scrum",
+        "project_key": "DEV"
+      }
+    ],
+    "sprints": [
+      {
+        "id": 101,
+        "board_id": 1,
+        "name": "Sprint 1",
+        "state": "active",
+        "start_date": "2024-09-09T08:00:00+00:00",
+        "end_date": "2024-09-23T08:00:00+00:00",
+        "goal": "Complete onboarding flow"
+      },
+      {
+        "id": 102,
+        "board_id": 1,
+        "name": "Sprint 2",
+        "state": "future",
+        "start_date": "2024-09-23T08:00:00+00:00",
+        "end_date": "2024-10-07T08:00:00+00:00",
+        "goal": "Stabilise integrations"
+      }
+    ],
+    "issues": [
+      {
+        "id": "30000",
+        "key": "DEV-1",
+        "project_key": "DEV",
+        "issue_type_id": "10001",
+        "summary": "Refine onboarding checklist",
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {"type": "text", "text": "Document the required onboarding tasks for the beta launch."}
+              ]
+            }
+          ]
+        },
+        "status_id": "1",
+        "reporter_id": "acct-alice",
+        "assignee_id": "acct-bob",
+        "labels": ["onboarding", "p1"],
+        "created": "2024-09-02T07:30:00+00:00",
+        "updated": "2024-09-10T09:15:00+00:00",
+        "sprint_id": 101,
+        "comments": [
+          {
+            "id": "40000",
+            "author_id": "acct-carol",
+            "created": "2024-09-10T09:10:00+00:00",
+            "body": {
+              "type": "doc",
+              "version": 1,
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {"type": "text", "text": "QA will validate the onboarding checklist once UX updates land."}
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "custom_fields": {
+          "customfield_launch_phase": "beta"
+        },
+        "links": [],
+        "changelog": [
+          {
+            "id": "50000",
+            "created": "2024-09-08T12:00:00+00:00",
+            "author": {"accountId": "acct-alice"},
+            "items": [
+              {
+                "field": "status",
+                "from": "1",
+                "fromString": "To Do",
+                "to": "3",
+                "toString": "In Progress"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "30001",
+        "key": "DEV-2",
+        "project_key": "DEV",
+        "issue_type_id": "10002",
+        "summary": "Integration health dashboard",
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {"type": "text", "text": "Expose partner API uptime and latency metrics on a consolidated dashboard."}
+              ]
+            }
+          ]
+        },
+        "status_id": "3",
+        "reporter_id": "acct-bob",
+        "assignee_id": "acct-carol",
+        "labels": ["analytics"],
+        "created": "2024-09-05T10:45:00+00:00",
+        "updated": "2024-09-11T15:20:00+00:00",
+        "sprint_id": 101,
+        "comments": [],
+        "custom_fields": {},
+        "links": [
+          {
+            "id": "60000",
+            "type": "relates to",
+            "target": "DEV-1"
+          }
+        ],
+        "changelog": []
+      },
+      {
+        "id": "30010",
+        "key": "SUP-1",
+        "project_key": "SUP",
+        "issue_type_id": "10003",
+        "summary": "Customer cannot reset password",
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {"type": "text", "text": "User reports that the reset email never arrives. Investigate SES logs."}
+              ]
+            }
+          ]
+        },
+        "status_id": "1",
+        "reporter_id": "acct-support",
+        "assignee_id": "acct-support",
+        "labels": ["customer", "priority-medium"],
+        "created": "2024-09-12T06:20:00+00:00",
+        "updated": "2024-09-12T06:20:00+00:00",
+        "sprint_id": null,
+        "comments": [],
+        "custom_fields": {
+          "customfield_region": "EMEA"
+        },
+        "links": [],
+        "changelog": []
+      }
+    ],
+    "service_requests": [
+      {
+        "id": "50000",
+        "issue_key": "SUP-1",
+        "request_type_id": "200",
+        "approvals": []
+      }
+    ]
+  }
+}

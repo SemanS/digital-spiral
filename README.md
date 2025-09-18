@@ -29,13 +29,35 @@ python -m pip install -e .[test]
 mock-jira-server --port 9000
 ```
 
-Or run the prebuilt container image:
+### One-click Docker seed
+
+Spin up a fresh mock Jira with deterministic seed data using Docker Compose:
 
 ```bash
-docker run -p 9000:9000 ghcr.io/<your-org>/mock-jira:latest
+docker compose up mock-jira-seed
 ```
 
-The server exposes FastAPI docs at `http://localhost:9000/docs`.
+This builds the local image, waits for the API to become healthy, generates the
+seed described in `scripts/seed_profiles/default.json`, and loads it through the
+`/_mock/seed/generate` endpoint. The `mock-jira` container keeps running after
+the seeding job finishes, exposing FastAPI docs at
+`http://localhost:9000/docs`.
+
+To customise the dataset, edit the JSON profile or point to another file:
+
+```bash
+MOCK_JIRA_SEED_CONFIG=scripts/seed_profiles/support.json \
+  docker compose up mock-jira-seed
+```
+
+Each profile can either list explicit `seed_data` (matching the structure
+returned by `/_mock/seed/export`) or a `generator` object with
+`GenConfig` overrides. The same config file can be used with the standalone
+generator:
+
+```bash
+python scripts/generate_dummy_jira.py --config scripts/seed_profiles/default.json
+```
 
 Authenticated requests must include `Authorization: Bearer mock-token` unless
 you customise the store.

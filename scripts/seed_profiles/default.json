@@ -1,0 +1,15 @@
+{
+  "description": "Default dataset for local development with two software projects and one service project.",
+  "generator": {
+    "seed": 20240918,
+    "days": 120,
+    "software_projects": 2,
+    "servicedesk_projects": 1,
+    "issues_per_project": 60,
+    "boards_per_sw_project": 1,
+    "sprints_per_board": 6,
+    "comments_per_issue_avg": 1.8,
+    "transition_rate": 0.7,
+    "link_probability": 0.2
+  }
+}
