@@ -56,6 +56,15 @@ async def list_deliveries(
     return {"values": store.deliveries}
 
 
+@router.get("/_mock/webhooks/logs")
+async def list_logs(
+    request: Request,
+    _: str = Depends(get_current_user),
+) -> dict:
+    store = get_store(request)
+    return {"values": store.get_webhook_logs()}
+
+
 @router.post("/_mock/webhooks/replay")
 async def replay_delivery(
     request: Request,

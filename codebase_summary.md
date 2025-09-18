@@ -1,15 +1,24 @@
-# KOMPLETNÝ SÚHRN CODEBASE - Mock Jira Cloud Server
+# KOMPLETNÝ SÚHRN CODEBASE - Digital Spiral (Mock Jira Cloud Server + MCP Integration)
 
 ## 📋 PREHĽAD PROJEKTU
-**Mock Jira Cloud Server** je pokročilý stateful mock server implementujúci najdôležitejšie API povrchy Jira Cloud REST APIs. Projekt je určený pre integračné testovanie a lokálny vývoj, kde priame volanie Atlassian endpointov nie je praktické.
+**Digital Spiral** je komplexný projekt kombinujúci **Mock Jira Cloud Server** s **MCP (Model Context Protocol) integráciou**. Projekt poskytuje stateful mock server implementujúci najdôležitejšie API povrchy Jira Cloud REST APIs spolu s MCP tools pre seamless integráciu s AI asistentmi.
+
+### 🎯 Hlavné komponenty:
+1. **Mock Jira Server** - Stateful mock implementácia Jira Cloud APIs
+2. **MCP Jira Tools** - MCP-kompatibilné nástroje pre Jira operácie
+3. **Python Client Adapter** - Thin wrapper okolo Jira REST endpoints
+4. **Orchestrator Examples** - Ukážkové workflow implementácie
+5. **Comprehensive Testing** - Unit, integration, contract a e2e testy
 
 ### 🎯 Hlavné funkcie:
 - **Jira Platform REST API v3**: Issues, search, transitions, comments, projects, fields, users, webhooks
 - **Jira Software (Agile) API**: Boards, sprints, backlog s pagination
 - **Jira Service Management API**: Portal requests CRUD s approval workflow
+- **MCP Tool Registry**: 8 predefinovaných MCP tools pre Jira operácie
 - **ADF aware payloads**: Atlassian Document Format pre descriptions a comments
 - **Webhooks**: Mock webhook listeners s inspection endpointom
 - **Auth + Rate limiting**: Bearer token auth s rate limiting simuláciou
+- **Client Adapters**: Python wrapper s retry logikou a error handling
 
 ---
 
@@ -18,43 +27,154 @@
 ### 🏠 ROOT ADRESÁR
 ```
 /
-├── README.md                    # Projektová dokumentácia (67 riadkov)
-├── pyproject.toml              # Python projekt konfigurácia (30 riadkov)
+├── README.md                    # Projektová dokumentácia (73 riadkov)
+├── pyproject.toml              # Python projekt konfigurácia (31 riadkov)
 ├── requirements-contract.txt    # Contract test závislosti (6 riadkov)
+├── Dockerfile                  # Container build konfigurácia
 ├── artifacts/                  # Výstupné súbory (prázdny)
-└── schemas/                    # OpenAPI schémy (3 súbory JSON)
+├── schemas/                    # OpenAPI schémy (3 súbory JSON)
+├── mockjira/                   # Hlavný mock server balík
+├── mcp_jira/                   # MCP integration layer
+├── clients/                    # Client adapters (Python)
+├── examples/                   # Orchestrator demo examples
+├── tests/                      # Comprehensive test suite
+└── scripts/                    # Utility skripty
 ```
 
-### 📦 MOCKJIRA/ - HLAVNÝ APLIKAČNÝ BALÍK
+### 🔧 MCP_JIRA/ - MCP INTEGRATION LAYER
 
-#### 🔧 mockjira/__init__.py (4 riadky)
+#### 📡 mcp_jira/server.py (30 riadkov)
 ```python
-# EXPORTOVANÉ FUNKCIE:
-- create_app  # Import z app.py
+# FUNKCIE:
+def get_tool(name: str):
+    """Return a registered MCP tool callable by name"""
+
+def invoke_tool(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Invoke a tool with the provided arguments"""
+
+def list_tools() -> Dict[str, Any]:
+    """Return the metadata describing available tools"""
 ```
 
-#### 🚀 mockjira/app.py (41 riadkov)
+#### 🛠️ mcp_jira/tools.py (95 riadkov)
+```python
+# GLOBÁLNE OBJEKTY:
+ADAPTER = JiraAdapter(...)  # Singleton JiraAdapter instance
+
+# MCP TOOL FUNKCIE:
+def t_jira_create_issue(args: Dict[str, Any]) -> Dict[str, Any]:
+    """MCP tool pre vytvorenie Jira issue"""
+
+def t_jira_get_issue(args: Dict[str, Any]) -> Dict[str, Any]:
+    """MCP tool pre získanie Jira issue"""
+
+def t_jira_search(args: Dict[str, Any]) -> Dict[str, Any]:
+    """MCP tool pre JQL search"""
+
+def t_jira_list_transitions(args: Dict[str, Any]) -> Dict[str, Any]:
+    """MCP tool pre zoznam dostupných prechodov"""
+
+def t_jira_transition_issue(args: Dict[str, Any]) -> Dict[str, Any]:
+    """MCP tool pre aplikovanie prechodu"""
+
+def t_jira_add_comment(args: Dict[str, Any]) -> Dict[str, Any]:
+    """MCP tool pre pridanie komentára"""
+
+def t_jsm_create_request(args: Dict[str, Any]) -> Dict[str, Any]:
+    """MCP tool pre vytvorenie JSM request"""
+
+def t_agile_list_sprints(args: Dict[str, Any]) -> Dict[str, Any]:
+    """MCP tool pre zoznam sprintov"""
+
+# TOOL REGISTRY:
+TOOL_REGISTRY: Dict[str, Callable] = {
+    "jira.create_issue": t_jira_create_issue,
+    "jira.get_issue": t_jira_get_issue,
+    "jira.search": t_jira_search,
+    "jira.list_transitions": t_jira_list_transitions,
+    "jira.transition_issue": t_jira_transition_issue,
+    "jira.add_comment": t_jira_add_comment,
+    "jsm.create_request": t_jsm_create_request,
+    "agile.list_sprints": t_agile_list_sprints,
+}
+```
+
+### 🐍 CLIENTS/PYTHON/ - PYTHON CLIENT ADAPTER
+
+#### 🔌 clients/python/jira_adapter.py (256 riadkov)
+```python
+# HLAVNÁ TRIEDA:
+class JiraAdapter:
+    """Thin wrapper around Jira REST endpoints with opinionated defaults"""
+
+    def __init__(self, base_url: str, token: str, timeout: float = 10.0, user_agent: str = "MockJiraAdapter/1.0"):
+        """Inicializácia s requests.Session a auth headers"""
+
+    # UTILITY METÓDY:
+    def _call(self, method: str, path: str, params=None, json_body=None) -> dict[str, Any]:
+        """HTTP volanie s error handling a retry logikou"""
+
+    def _handle_error(self, response: requests.Response) -> None:
+        """Error handling pre HTTP responses"""
+
+    # PLATFORM API METÓDY:
+    def create_issue(self, project_key: str, issue_type_id: str, summary: str, description_adf=None, fields=None):
+        """Vytvorenie nového issue"""
+
+    def get_issue(self, key: str) -> dict[str, Any]:
+        """Získanie issue podľa kľúča"""
+
+    def list_transitions(self, key: str) -> list[dict[str, Any]]:
+        """Zoznam dostupných prechodov pre issue"""
+
+    def transition_issue(self, key: str, transition_id: str) -> dict[str, Any]:
+        """Aplikovanie prechodu na issue"""
+
+    def add_comment(self, key: str, body_adf: dict[str, Any]) -> dict[str, Any]:
+        """Pridanie komentára k issue"""
+
+    def search(self, jql: str, start_at: int = 0, max_results: int = 50) -> dict[str, Any]:
+        """JQL search s pagination"""
+
+    def register_webhook(self, url: str, jql: str, events: list[str]) -> dict[str, Any]:
+        """Registrácia webhook listenera"""
+
+    # AGILE API METÓDY:
+    def list_sprints(self, board_id: int, start_at: int = 0, max_results: int = 50) -> dict[str, Any]:
+        """Zoznam sprintov pre board"""
+
+    # JSM API METÓDY:
+    def create_request(self, service_desk_id: str, request_type_id: str, summary: str, fields=None) -> dict[str, Any]:
+        """Vytvorenie JSM service request"""
+```
+
+#### ⚠️ clients/python/exceptions.py (20 riadkov)
+```python
+# VÝNIMKY:
+class JiraAdapterError(Exception):
+    """Base exception pre JiraAdapter"""
+
+class JiraNotFoundError(JiraAdapterError):
+    """404 Not Found exception"""
+
+class JiraAuthError(JiraAdapterError):
+    """401/403 Authentication/Authorization exception"""
+
+class JiraRateLimitError(JiraAdapterError):
+    """429 Rate Limit exception s retry_after"""
+```
+
+### 📦 MOCKJIRA/ - HLAVNÝ MOCK SERVER BALÍK
+
+#### 🚀 mockjira/app.py (83 riadky)
 ```python
 # FUNKCIE:
 def create_app(store: InMemoryStore | None = None) -> FastAPI:
     """Vytvorí FastAPI aplikáciu s nakonfigurovanými routami
     - Nastaví dependency overrides pre auth
-    - Pripojí všetky routery (platform, agile, service_management, webhooks)
+    - Pripojí všetky routery (platform, agile, service_management, webhooks, mock_admin)
     - Nastaví store do app.state
-    """
-```
-
-#### 🔐 mockjira/auth.py (56 riadkov)
-```python
-# FUNKCIE:
-async def get_current_user(authorization: str, x_force_429: str) -> str:
-    """Placeholder pre auth dependency - nahradený počas app setup"""
-
-def auth_dependency(store: InMemoryStore) -> Callable:
-    """Vráti dependency funkciu pre:
-    - Bearer token validáciu
-    - Rate limiting kontrolu
-    - X-Force-429 header simuláciu
+    - Pridá exception handlers a middleware
     """
 ```
 
@@ -73,7 +193,7 @@ def run(argv: list[str] | None = None) -> None:
     """
 ```
 
-#### 💾 mockjira/store.py (855 riadkov) - NAJVÄČŠÍ SÚBOR
+#### 💾 mockjira/store.py (1300+ riadkov) - NAJVÄČŠÍ SÚBOR
 ```python
 # VÝNIMKY:
 class RateLimitError(Exception):
@@ -113,14 +233,17 @@ class RateLimitError(Exception):
 @dataclass class Issue:
     """Issue: id, key, project_key, issue_type_id, summary, description,
     status_id, reporter_id, assignee_id, labels, created, updated,
-    sprint_id, comments"""
+    sprint_id, comments, custom_fields"""
 
 @dataclass class WebhookRegistration:
     """Webhook: id, url, events, jql"""
 
 # HLAVNÁ TRIEDA:
 class InMemoryStore:
-    """Centrálny state container pre mock server"""
+    """Centrálny state container pre mock server s pokročilými funkciami"""
+
+    def __init__(self):
+        """Inicializácia všetkých collections a counters"""
 
     # FACTORY METÓDY:
     @classmethod
@@ -135,7 +258,7 @@ class InMemoryStore:
         - 3 statusy (To Do, In Progress, Done)
         - 2 boards (Scrum, Kanban)
         - 3 sprinty (closed, active, future)
-        - 4 sample issues
+        - 4 sample issues s komentármi
         """
 
     # UTILITY METÓDY:
@@ -152,6 +275,9 @@ class InMemoryStore:
     def register_call(self, token: str) -> None:
         """Rate limiting - 100 calls/60s window"""
 
+    def check_force_429(self, token: str) -> bool:
+        """Kontrola X-Force-429 header simulácie"""
+
     # PLATFORM API METÓDY:
     def list_projects(self) -> list[dict]:
         """Zoznam všetkých projektov"""
@@ -166,7 +292,7 @@ class InMemoryStore:
         """Vyhľadávanie používateľov podľa mena/emailu"""
 
     def fields_payload(self) -> list[dict]:
-        """Definície polí (summary, description, labels)"""
+        """Definície polí (summary, description, labels, custom fields)"""
 
     def get_issue(self, key: str) -> Issue | None:
         """Získanie issue podľa kľúča"""
@@ -178,7 +304,7 @@ class InMemoryStore:
         """Aktualizácia issue s webhook dispatch"""
 
     def search_issues(self, filters: dict) -> list[Issue]:
-        """Vyhľadávanie issues podľa filtrov (project, status, assignee)"""
+        """Vyhľadávanie issues podľa filtrov (project, status, assignee, JQL)"""
 
     def get_transitions(self, issue: Issue) -> list[Transition]:
         """Dostupné prechody pre issue"""
@@ -223,12 +349,12 @@ class InMemoryStore:
         """Zmazanie webhook"""
 
     def dispatch_event(self, event_type: str, payload: dict) -> None:
-        """Odoslanie webhook eventu všetkým listenerom"""
+        """Odoslanie webhook eventu všetkým listenerom s jitter a poison simulation"""
 
     def _send_webhook(self, url: str, delivery: dict) -> None:
         """HTTP POST webhook delivery (fail silently)"""
 
-    # UTILITY METÓDY:
+    # ADMIN & UTILITY METÓDY:
     def normalize_adf(self, value: Any) -> dict:
         """Normalizácia ADF payloadu"""
 
@@ -237,16 +363,27 @@ class InMemoryStore:
 
     def _parse_datetime(self, value: Any) -> datetime | None:
         """Parsovanie datetime hodnôt"""
+
+    def reset_store(self) -> None:
+        """Reset store do prázdneho stavu"""
+
+    def load_from_json(self, payload: dict) -> None:
+        """Načítanie store z JSON payload"""
 ```
 
 #### 🛠️ mockjira/utils.py (72 riadkov)
 ```python
+# VÝNIMKY:
+class ApiError(Exception):
+    """Base API error s HTTP status code a response generation"""
+
 # FUNKCIE:
 def parse_jql(jql: str | None) -> dict[str, Any]:
     """Parsuje podmnožinu JQL do dictionary filtrov
     - Podporuje IN a = operátory
     - Ignoruje ORDER BY klauzuly
     - Normalizuje quoted hodnoty
+    - Podporuje currentUser() funkciu
     """
 
 def _normalise_value(raw: str) -> str:
@@ -263,7 +400,7 @@ def paginate(items: Iterable[Any], start_at: int, max_results: int) -> dict:
 #### 📋 mockjira/routers/__init__.py (11 riadkov)
 ```python
 # EXPORTY:
-__all__ = ["agile", "platform", "service_management", "webhooks"]
+__all__ = ["agile", "platform", "service_management", "webhooks", "mock_admin"]
 ```
 
 #### 🏃 mockjira/routers/agile.py (87 riadkov) - JIRA SOFTWARE API
@@ -394,11 +531,52 @@ async def list_deliveries(...) -> dict:
     """GET /rest/api/3/_mock/webhooks/deliveries - Inspection endpoint pre deliveries"""
 ```
 
+#### 🔧 mockjira/routers/mock_admin.py (45 riadkov) - ADMIN API
+```python
+# HELPER FUNKCIE:
+def get_store(request: Request) -> InMemoryStore:
+    """Získa store z app.state"""
+
+# API ENDPOINTS:
+@router.post("/_mock/reset")
+async def reset_store(...) -> dict:
+    """POST /_mock/reset - Reset store do prázdneho stavu"""
+
+@router.post("/_mock/load")
+async def load_store(...) -> dict:
+    """POST /_mock/load - Načítanie store z JSON payload"""
+
+@router.get("/_mock/export")
+async def export_store(...) -> dict:
+    """GET /_mock/export - Export aktuálneho store stavu"""
+```
+
+### 📝 EXAMPLES/ - ORCHESTRATOR DEMO
+
+#### 🎭 examples/orchestrator_demo.py (70 riadkov)
+```python
+# FUNKCIE:
+def _adapter() -> JiraAdapter:
+    """Vytvorí JiraAdapter s env konfiguráciou"""
+
+def main() -> Dict[str, Any]:
+    """Orchestrator demo workflow:
+    - Registrácia webhook (ak je MOCKJIRA_WEBHOOK_URL nastavené)
+    - Vytvorenie SUP issue s ADF description
+    - Aplikovanie transition
+    - Pridanie komentára
+    - JQL search
+    - JSM request vytvorenie
+    - Agile sprint listing
+    - Return summary s timing info
+    """
+```
+
 ---
 
-## 🧪 TESTS/ - TESTOVACIA SADA
+## 🧪 TESTS/ - KOMPLEXNÁ TESTOVACIA SADA
 
-### 📋 tests/test_mockjira.py (171 riadkov) - HLAVNÉ TESTY
+### 📋 tests/test_mockjira.py (171 riadkov) - HLAVNÉ UNIT TESTY
 ```python
 # FIXTURES:
 @pytest.fixture
@@ -442,7 +620,101 @@ async def test_rate_limit_simulation(client):
     """Test X-Force-429 header simulácie"""
 ```
 
-### 🔍 TESTS/CONTRACT/ - CONTRACT TESTY
+### 🔧 tests/test_errors_and_limits.py (50 riadkov) - ERROR HANDLING TESTY
+```python
+# TEST FUNKCIE:
+@pytest.mark.asyncio
+async def test_rate_limiting_behavior(client):
+    """Test rate limiting logiky"""
+
+@pytest.mark.asyncio
+async def test_auth_errors(client):
+    """Test authentication error handling"""
+
+@pytest.mark.asyncio
+async def test_not_found_errors(client):
+    """Test 404 error responses"""
+```
+
+### 🐍 tests/clients/ - CLIENT ADAPTER TESTY
+
+#### 🔄 tests/clients/test_adapter_issue_flow.py (80 riadkov)
+```python
+# TEST FUNKCIE:
+@pytest.mark.asyncio
+async def test_issue_crud_flow(mock_server):
+    """Test kompletného issue CRUD workflow cez JiraAdapter:
+    - create_issue
+    - get_issue
+    - list_transitions
+    - transition_issue
+    - add_comment
+    - search
+    """
+
+@pytest.mark.asyncio
+async def test_webhook_registration(mock_server):
+    """Test webhook registrácie cez adapter"""
+```
+
+#### 🎫 tests/clients/test_adapter_jsm_flow.py (40 riadkov)
+```python
+# TEST FUNKCIE:
+@pytest.mark.asyncio
+async def test_jsm_request_flow(mock_server):
+    """Test JSM request workflow cez JiraAdapter:
+    - create_request
+    - Validácia response štruktúry
+    """
+```
+
+#### ⏱️ tests/clients/test_adapter_retry_rate_limit.py (60 riadkov)
+```python
+# TEST FUNKCIE:
+@pytest.mark.asyncio
+async def test_rate_limit_retry(mock_server):
+    """Test retry logiky pri rate limiting"""
+
+@pytest.mark.asyncio
+async def test_auth_error_handling(mock_server):
+    """Test error handling pre auth errors"""
+```
+
+### 🎯 tests/mcp/ - MCP INTEGRATION TESTY
+
+#### 🛠️ tests/mcp/test_mcp_golden_path.py (75 riadkov)
+```python
+# TEST FUNKCIE:
+@pytest.mark.asyncio
+async def test_mcp_tools_golden_path(mock_server):
+    """Test všetkých MCP tools v golden path scenári:
+    - t_jira_create_issue
+    - t_jira_get_issue
+    - t_jira_list_transitions
+    - t_jira_transition_issue
+    - t_jira_add_comment
+    - t_jira_search
+    - t_jsm_create_request
+    - t_agile_list_sprints
+    - Validácia TOOL_REGISTRY
+    """
+```
+
+### 🌐 tests/e2e/ - END-TO-END TESTY
+
+#### 🎭 tests/e2e/test_orchestrator_flow.py (50 riadkov)
+```python
+# TEST FUNKCIE:
+@pytest.mark.asyncio
+async def test_orchestrator_demo_flow(mock_server):
+    """Test orchestrator_demo.py workflow:
+    - Spustenie kompletného demo
+    - Validácia všetkých krokov
+    - Kontrola webhook deliveries
+    """
+```
+
+### 🔍 tests/contract/ - CONTRACT TESTY
 
 #### ⚙️ tests/contract/conftest.py (84 riadkov)
 ```python
@@ -603,6 +875,19 @@ def test_software_contract(case, base_url, auth_header, parity_recorder):
     """
 ```
 
+### 💨 tests/smoke/ - SMOKE TESTY
+
+#### 🌐 tests/smoke/test_against_real_jira.py (30 riadkov)
+```python
+# TEST FUNKCIE:
+@pytest.mark.skipif(not os.getenv("REAL_JIRA_URL"), reason="Real Jira not configured")
+def test_against_real_jira():
+    """Smoke test proti reálnej Jira inštancii
+    - Používa sa pre validáciu kompatibility
+    - Spúšťa sa iba ak je REAL_JIRA_URL nastavené
+    """
+```
+
 ---
 
 ## 🔧 SCRIPTS/ - UTILITY SKRIPTY
@@ -673,9 +958,9 @@ def main():
 ## 📄 SCHEMAS/ - OPENAPI SCHÉMY
 ```
 schemas/
-├── jira-platform.v3.json     # Jira Platform REST API v3 schéma
-├── jira-software.v3.json     # Jira Software (Agile) API schéma
-└── jsm.v3.json              # Jira Service Management API schéma
+├── jira-platform.v3.json     # Jira Platform REST API v3 schéma (veľká)
+├── jira-software.v3.json     # Jira Software (Agile) API schéma (stredná)
+└── jsm.v3.json              # Jira Service Management API schéma (malá)
 ```
 
 ## 📁 ARTIFACTS/ - VÝSTUPNÉ SÚBORY
@@ -687,44 +972,52 @@ artifacts/                    # Prázdny adresár pre generované súbory
 
 ---
 
-## 📈 ŠTATISTIKY PROJEKTU
+## 📈 AKTUALIZOVANÉ ŠTATISTIKY PROJEKTU
 
 ### 📊 SÚBORY A RIADKY:
-- **Celkový počet súborov**: 25
-- **Najväčší súbor**: mockjira/store.py (855 riadkov)
-- **Celkový počet riadkov kódu**: ~1,500+
-- **Python súbory**: 22
-- **Konfiguračné súbory**: 3
+- **Celkový počet súborov**: 35+
+- **Najväčší súbor**: mockjira/store.py (1300+ riadkov)
+- **Celkový počet riadkov kódu**: ~2,500+
+- **Python súbory**: 30+
+- **Konfiguračné súbory**: 5
 
 ### 🔧 FUNKCIE A TRIEDY:
-- **Celkový počet funkcií**: ~85+
+- **Celkový počet funkcií**: ~150+
 - **Dataclasses**: 12 (User, Project, Issue, atď.)
-- **API endpointy**: 20+
-- **Test funkcie**: 15+
+- **API endpointy**: 25+ (Platform: 12, Agile: 4, JSM: 4, Webhooks: 4, Admin: 3)
+- **MCP Tools**: 8 predefinovaných tools
+- **Test funkcie**: 25+
 
 ### 🏗️ ARCHITEKTÚRA:
-- **FastAPI routery**: 4 (platform, agile, service_management, webhooks)
-- **Centrálny store**: InMemoryStore s 25+ metódami
-- **Auth systém**: Bearer token + rate limiting
-- **Webhook systém**: Registration + delivery tracking
+- **FastAPI routery**: 5 (platform, agile, service_management, webhooks, mock_admin)
+- **MCP Integration Layer**: server.py + tools.py s TOOL_REGISTRY
+- **Python Client Adapter**: JiraAdapter s retry logikou
+- **Centrálny store**: InMemoryStore s 40+ metódami
+- **Auth systém**: Bearer token + rate limiting + X-Force-429 simulation
+- **Webhook systém**: Registration + delivery tracking + jitter simulation
 
-### 🧪 TESTOVANIE:
-- **Unit testy**: 6 test funkcií
+### 🧪 KOMPLEXNÉ TESTOVANIE:
+- **Unit testy**: 8 test súborov
+- **Client adapter testy**: 3 test súbory
+- **MCP integration testy**: 1 test súbor
+- **E2E testy**: 1 test súbor
 - **Contract testy**: 6 schemathesis testov
-- **Integration testy**: 3 workflow testy
-- **Test coverage**: Platform, Agile, JSM APIs
+- **Smoke testy**: 1 test súbor proti reálnej Jira
+- **Test coverage**: Platform, Agile, JSM, MCP, Client APIs
 
 ### 📦 ZÁVISLOSTI:
-- **Runtime**: FastAPI, Uvicorn, Pydantic, httpx
+- **Runtime**: FastAPI, Uvicorn, Pydantic, httpx, requests
 - **Testing**: pytest, pytest-asyncio, anyio
 - **Contract testing**: schemathesis, openapi-core, prance
 - **Python verzia**: >=3.11
 
 ### 🎯 API POKRYTIE:
-- **Jira Platform API**: 10 endpointov (issues, search, comments, projects, atď.)
+- **Jira Platform API**: 12 endpointov (issues, search, comments, projects, fields, users, atď.)
 - **Jira Software API**: 4 endpointy (boards, sprints, backlog)
-- **JSM API**: 3 endpointy (requests, approvals)
+- **JSM API**: 4 endpointy (requests, approvals)
 - **Webhook API**: 4 endpointy (register, list, delete, deliveries)
+- **Admin API**: 3 endpointy (reset, load, export)
+- **MCP Tools**: 8 tools (jira.*, jsm.*, agile.*)
 
 ---
 
@@ -732,34 +1025,105 @@ artifacts/                    # Prázdny adresár pre generované súbory
 
 ### 💻 Lokálny vývoj:
 ```bash
+# Inštalácia
 pip install -e .[test]
+
+# Spustenie mock servera
 mock-jira-server --port 9000
+
+# Spustenie s prázdnym store
+mock-jira-server --no-seed --port 9000
 ```
 
 ### 🧪 Testovanie:
 ```bash
-pytest                           # Unit testy
-python scripts/run_contracts.py  # Contract testy
+# Unit a integration testy
+pytest
+
+# Contract testy proti OpenAPI schémam
+python scripts/run_contracts.py
+
+# Špecifické test kategórie
+pytest tests/mcp/                    # MCP integration testy
+pytest tests/clients/                # Client adapter testy
+pytest tests/e2e/                    # End-to-end testy
+pytest tests/contract/               # Contract testy
+pytest tests/smoke/                  # Smoke testy
+```
+
+### 🐳 Docker deployment:
+```bash
+# Build image
+docker build -t digital-spiral .
+
+# Run container
+docker run -p 9000:9000 digital-spiral
+```
+
+### 🔧 MCP Integration:
+```python
+# Použitie MCP tools
+from mcp_jira import server
+
+# Zoznam dostupných tools
+tools = server.list_tools()
+
+# Vyvolanie tool
+result = server.invoke_tool("jira.create_issue", {
+    "project_key": "DEV",
+    "issue_type_id": "10001",
+    "summary": "Test issue"
+})
+```
+
+### 🐍 Python Client Adapter:
+```python
+# Použitie JiraAdapter
+from clients.python.jira_adapter import JiraAdapter
+
+adapter = JiraAdapter("http://localhost:9000", "mock-token")
+issue = adapter.create_issue("DEV", "10001", "Test issue")
 ```
 
 ### 🔧 Rozšírenie:
-- Pridanie nových API endpointov do routerov
-- Rozšírenie InMemoryStore o nové entity
-- Pridanie nových seed dát
-- Integrácia s reálnymi OpenAPI schémami
+- **Nové API endpointy**: Pridanie do príslušných routerov v `mockjira/routers/`
+- **Nové MCP tools**: Rozšírenie `TOOL_REGISTRY` v `mcp_jira/tools.py`
+- **Nové entity**: Pridanie dataclasses do `mockjira/store.py`
+- **Nové seed dáta**: Úprava `_seed()` metódy v `InMemoryStore`
+- **Client adapters**: Pridanie nových jazykov do `clients/`
 
 ---
 
 ## 🎯 ZÁVER
 
-Tento projekt predstavuje **komplexný mock server pre Jira Cloud APIs** s pokročilými funkciami:
+**Digital Spiral** predstavuje **komplexný ekosystém pre Jira Cloud API simuláciu a integráciu** s pokročilými funkciami:
 
-✅ **Stateful implementácia** - Všetky zmeny sa zachovávajú v pamäti
-✅ **Realistické dáta** - Predvyplnené projekty, používatelia, issues
-✅ **Webhook systém** - Plne funkčný s delivery tracking
-✅ **Contract testing** - Validácia proti oficiálnym OpenAPI schémam
-✅ **Rate limiting** - Simulácia reálnych API limitov
-✅ **ADF support** - Atlassian Document Format pre rich text
-✅ **Rozsiahle testovanie** - Unit, integration a property-based testy
+### ✅ **Hlavné výhody:**
+- **Stateful mock server** - Všetky zmeny sa zachovávajú v pamäti počas session
+- **MCP integrácia** - Seamless integrácia s AI asistentmi cez Model Context Protocol
+- **Python client adapter** - Production-ready wrapper s retry logikou a error handling
+- **Realistické dáta** - Predvyplnené projekty, používatelia, issues, sprinty
+- **Webhook systém** - Plne funkčný s delivery tracking a jitter simulation
+- **Contract testing** - Validácia proti oficiálnym Atlassian OpenAPI schémam
+- **Rate limiting** - Simulácia reálnych API limitov s X-Force-429 header
+- **ADF support** - Atlassian Document Format pre rich text content
+- **Comprehensive testing** - Unit, integration, contract, e2e a smoke testy
+- **Admin API** - Reset, load a export funkcionalita pre testing scenarios
 
-Projekt je ideálny pre **integračné testovanie**, **lokálny vývoj** a **CI/CD pipelines** kde je potrebné simulovať Jira Cloud API bez pripojenia k reálnej inštancii.
+### 🎯 **Použitie:**
+- **AI Assistant Integration** - MCP tools pre Jira operácie v AI workflows
+- **Integration Testing** - Mock Jira pre testovanie aplikácií
+- **Local Development** - Lokálny vývoj bez pripojenia k reálnej Jira
+- **CI/CD Pipelines** - Automatizované testovanie s mock Jira
+- **API Prototyping** - Rýchle prototypovanie Jira integrácie
+- **Training & Demos** - Bezpečné prostredie pre školenia
+
+### 🚀 **Technológie:**
+- **Backend**: FastAPI + Uvicorn + Pydantic
+- **Testing**: pytest + schemathesis + openapi-core
+- **Client**: requests + httpx s retry logikou
+- **MCP**: Model Context Protocol integration
+- **Container**: Docker support
+- **Python**: >=3.11 s type hints
+
+Projekt je ideálny pre **AI-driven development**, **integračné testovanie**, **lokálny vývoj** a **CI/CD pipelines** kde je potrebné simulovať Jira Cloud API bez pripojenia k reálnej inštancii.

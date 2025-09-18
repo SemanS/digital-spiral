@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -15,6 +17,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+
+
+def _env_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class RateLimitError(Exception):
@@ -355,6 +363,7 @@ class InMemoryStore:
         self._recent_delivery_keys: deque[tuple[str, str]] = deque()
         self._recent_delivery_lookup: set[tuple[str, str]] = set()
         self._recent_delivery_window = 2000
+        self.webhook_logs: list[dict[str, Any]] = []
         self.tokens: dict[str, str] = {}
         self.rate_calls: dict[str, deque[tuple[datetime, int]]] = defaultdict(deque)
         self.next_issue_id = 10000
@@ -363,6 +372,7 @@ class InMemoryStore:
         self.next_webhook_id = 40000
         self.next_sprint_id = 5000
         self.next_link_id = 60000
+        self._webhook_log_limit = 2000
         jitter_min = int(os.getenv("MOCKJIRA_WEBHOOK_JITTER_MIN", "50"))
         jitter_max = int(os.getenv("MOCKJIRA_WEBHOOK_JITTER_MAX", "250"))
         if jitter_min > jitter_max:
@@ -370,6 +380,9 @@ class InMemoryStore:
         self._webhook_jitter_ms: tuple[int, int] = (jitter_min, jitter_max)
         self._webhook_poison_prob: float = float(
             os.getenv("MOCKJIRA_WEBHOOK_POISON_PROB", "0.0")
+        )
+        self._legacy_signature_compat = _env_truthy(
+            os.getenv("WEBHOOK_SIGNATURE_COMPAT")
         )
         self._force_429_tokens: set[str] = set()
 
@@ -1123,6 +1136,17 @@ class InMemoryStore:
     def delete_webhook(self, webhook_id: str) -> None:
         self.webhooks.pop(webhook_id, None)
 
+    def get_webhook_logs(self) -> list[dict[str, Any]]:
+        return list(self.webhook_logs)
+
+    @property
+    def webhook_signature_version(self) -> int:
+        return 2
+
+    @property
+    def webhook_signature_compat(self) -> bool:
+        return self._legacy_signature_compat
+
     def dispatch_event(self, event_type: str, payload: dict[str, Any]) -> None:
         event_id = str(uuid.uuid4())
         now = datetime.now(UTC)
@@ -1148,6 +1172,8 @@ class InMemoryStore:
                 "timestamp": now.isoformat(),
                 "status": "pending",
                 "attempts": 0,
+                "headers": None,
+                "wireBody": None,
             }
             self.deliveries.append(record)
             self._schedule_delivery(
@@ -1234,7 +1260,8 @@ class InMemoryStore:
         event_id = meta["event_id"]
         jitter = random.uniform(*self._webhook_jitter_ms) / 1000
         await asyncio.sleep(jitter)
-        body = json.dumps(payload).encode()
+        body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+        record["wireBody"] = base64.b64encode(body).decode()
         headers = {
             "Content-Type": "application/json",
             "X-MockJira-Event-Id": event_id,
@@ -1243,6 +1270,11 @@ class InMemoryStore:
         if secret:
             digest = hashlib.sha256(secret.encode() + body).hexdigest()
             headers["X-MockJira-Signature"] = f"sha256={digest}"
+            headers["X-MockJira-Signature-Version"] = "2"
+            if self._legacy_signature_compat:
+                legacy = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+                headers["X-MockJira-Legacy-Signature"] = f"sha256={legacy}"
+        record["headers"] = headers.copy()
 
         delays = [0.5, 1.0, 2.0]
         attempts = 0
@@ -1251,26 +1283,43 @@ class InMemoryStore:
         for idx in range(len(delays) + 1):
             attempts = idx + 1
             record["attempts"] = attempts
+            req_id = str(uuid.uuid4())
+            status_code: int | None = None
+            attempt_status: str
             try:
                 if random.random() < self._webhook_poison_prob:
                     raise httpx.HTTPError("Injected failure")
                 async with httpx.AsyncClient(timeout=1.5) as client:
                     response = await client.post(url, content=body, headers=headers)
-                last_status = response.status_code
-                record["lastStatus"] = last_status
-                if 500 <= response.status_code < 600:
-                    raise httpx.HTTPError("Server error")
-                status = "delivered" if response.status_code < 400 else "failed"
-                break
+                status_code = response.status_code
+                if 500 <= status_code < 600:
+                    attempt_status = "retrying" if idx < len(delays) else "failed"
+                else:
+                    attempt_status = "delivered" if status_code < 400 else "failed"
             except httpx.HTTPError:
-                status = "retrying" if idx < len(delays) else "failed"
-                if idx >= len(delays):
-                    break
+                attempt_status = "retrying" if idx < len(delays) else "failed"
+            self._append_webhook_log(
+                req_id=req_id,
+                delivery_id=meta["delivery_id"],
+                event_id=event_id,
+                attempt=attempts,
+                status=attempt_status,
+                status_code=status_code,
+                url=url,
+            )
+            if status_code is not None:
+                last_status = status_code
+                record["lastStatus"] = status_code
+            if attempt_status == "delivered":
+                status = "delivered"
+                break
+            if attempt_status == "retrying" and idx < len(delays):
                 await asyncio.sleep(delays[idx])
+                continue
+            status = "failed"
+            break
         record["status"] = status
         record["completedAt"] = datetime.now(UTC).isoformat()
-        if last_status is not None:
-            record["lastStatus"] = last_status
         logger.info(
             "Webhook delivery id=%s event_id=%s attempts=%s status=%s",
             meta["delivery_id"],
@@ -1297,12 +1346,43 @@ class InMemoryStore:
         )
         return record
 
+    def _append_webhook_log(
+        self,
+        *,
+        req_id: str,
+        delivery_id: str,
+        event_id: str,
+        attempt: int,
+        status: str,
+        status_code: int | None,
+        url: str,
+    ) -> None:
+        entry = {
+            "requestId": req_id,
+            "deliveryId": delivery_id,
+            "eventId": event_id,
+            "attempt": attempt,
+            "status": status,
+            "statusCode": status_code,
+            "url": url,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        self.webhook_logs.append(entry)
+        if len(self.webhook_logs) > self._webhook_log_limit:
+            self.webhook_logs.pop(0)
+
     def update_webhook_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
         if "poison_prob" in settings:
             try:
                 self._webhook_poison_prob = max(0.0, float(settings["poison_prob"]))
             except (TypeError, ValueError):
                 pass
+        if "signature_compat" in settings:
+            value = settings["signature_compat"]
+            if isinstance(value, bool):
+                self._legacy_signature_compat = value
+            else:
+                self._legacy_signature_compat = _env_truthy(str(value))
         jitter = settings.get("jitter_ms")
         if isinstance(jitter, (list, tuple)) and len(jitter) == 2:
             try:
@@ -1317,6 +1397,7 @@ class InMemoryStore:
         return {
             "poison_prob": self._webhook_poison_prob,
             "jitter_ms": list(self._webhook_jitter_ms),
+            "signature_compat": self._legacy_signature_compat,
         }
 
     # ------------------------ Utilities --------------------------------

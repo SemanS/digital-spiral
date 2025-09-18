@@ -13,8 +13,8 @@ local development where hitting the real Atlassian endpoints is impractical.
 - **Jira Service Management API**: Portal request CRUD with simple approvals.
 - **ADF aware payloads**: descriptions and comments are stored and returned as
   Atlassian Document Format documents.
-- **Webhooks**: Register mock webhook listeners and inspect all deliveries via a
-  helper endpoint.
+- **Webhooks**: Register mock webhook listeners with jitter, retry/backoff,
+  signature verification helpers and delivery inspection endpoints.
 - **Auth + rate limiting**: Bearer token authentication using seeded API tokens
   and a light cost counter with optional `X-Force-429` simulation header.
 
@@ -46,7 +46,9 @@ you customise the store.
 - `POST /rest/api/3/issue` — create an issue. Responses include JQL-searchable
   data and webhook deliveries are recorded.
 - `GET /rest/api/3/_mock/webhooks/deliveries` — retrieve all webhook payloads
-  emitted during the session.
+  emitted during the session (including base64-encoded wire bodies and headers).
+- `GET /rest/api/3/_mock/webhooks/logs` — structured attempt log with request
+  ids, status codes and retry metadata.
 - `GET /rest/agile/1.0/board` — agile boards with pagination metadata.
 - `POST /rest/servicedeskapi/request` — create a service request based on the
   seeded Support project.
@@ -57,6 +59,33 @@ you customise the store.
 python -m pip install -e .[test]
 pytest
 ```
+
+### Webhook security
+
+Webhook deliveries include deterministic headers:
+
+- `X-MockJira-Event-Id` – stable event identifier used for dedupe/replay.
+- `X-MockJira-Signature-Version` – current signature algorithm version (`2`).
+- `X-MockJira-Signature` – `sha256=` digest computed from
+  `sha256(secret + body)`.
+- `X-MockJira-Legacy-Signature` – optional `sha256` HMAC when
+  `WEBHOOK_SIGNATURE_COMPAT=1` is enabled (for old clients).
+
+Example verifier:
+
+```python
+import hashlib
+
+def verify(secret: str, body: bytes, header: str) -> bool:
+    algorithm, _, digest = header.partition("=")
+    if algorithm != "sha256":
+        return False
+    expected = hashlib.sha256(secret.encode("utf-8") + body).hexdigest()
+    return digest == expected
+```
+
+Replay requests reuse the original wire body and headers, so capturing systems
+can revalidate the same signature on retries.
 
 ## Extending
 

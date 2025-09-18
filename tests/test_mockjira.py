@@ -1,6 +1,4 @@
 import asyncio
-import hashlib
-import hmac
 
 import pytest
 import pytest_asyncio
@@ -10,6 +8,7 @@ from typing import Any
 
 from mockjira.app import create_app
 from mockjira.store import InMemoryStore
+from tests.utils.webhook_sig import compute_sig_v2, get_sig_from_headers
 
 AUTH_HEADERS = {"Authorization": "Bearer mock-token"}
 
@@ -271,9 +270,10 @@ async def test_webhook_hmac_valid_and_retry_on_500(client, monkeypatch):
 
     await asyncio.sleep(1.0)
     assert len(calls) == 2
-    signature = calls[1]["headers"]["X-MockJira-Signature"]
-    expected = "sha256=" + hmac.new(b"shh", calls[1]["content"], hashlib.sha256).hexdigest()
-    assert signature == expected
+    alg, digest = get_sig_from_headers(calls[1]["headers"])
+    assert alg == "sha256"
+    expected = compute_sig_v2("shh", calls[1]["content"])
+    assert digest == expected
 
 
 @pytest.mark.asyncio

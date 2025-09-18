@@ -33,7 +33,11 @@ async def info(request: Request) -> dict:
         "issues": len(store.issues),
         "webhooks": len(store.webhooks),
     }
-    return {"version": version, "seed": seed}
+    signature = {
+        "version": store.webhook_signature_version,
+        "legacyCompat": store.webhook_signature_compat,
+    }
+    return {"version": version, "seed": seed, "webhookSignature": signature}
 
 
 @router.get("/_mock/seed/export")
