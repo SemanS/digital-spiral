@@ -190,6 +190,13 @@ class JiraAdapter:
             json_body={"body": body_adf},
         )
 
+    def update_issue_fields(self, key: str, fields: dict[str, Any]) -> dict[str, Any]:
+        return self._call(
+            "PUT",
+            f"/rest/api/3/issue/{key}",
+            json_body={"fields": fields},
+        )
+
     def search(self, jql: str, start_at: int = 0, max_results: int = 50) -> dict[str, Any]:
         try:
             return self._call(
@@ -279,3 +286,10 @@ class JiraAdapter:
             json_body={"webhooks": [body]},
         )
         return response.get("webhookRegistrationResult", [])
+
+    def list_webhooks(self) -> list[dict[str, Any]]:
+        response = self._call("GET", "/rest/api/3/webhook")
+        values = response.get("values", [])
+        if not isinstance(values, list):
+            return []
+        return values

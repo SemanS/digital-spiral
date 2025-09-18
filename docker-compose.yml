@@ -6,6 +6,17 @@ services:
     ports: ["9000:9000"]
     environment:
       - LOG_LEVEL=info
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9000/_mock/health', timeout=2).status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
 
   orchestrator:
     image: python:3.12-slim
@@ -22,5 +33,17 @@ services:
       - WEBHOOK_SECRET=dev-secret
       - LEDGER_BACKEND=memory
       - SIGNATURE_VERSION=2
+      - ORCHESTRATOR_BASE_URL=http://orchestrator:7010
     depends_on:
       - mock-jira
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:7010/health', timeout=2).status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
