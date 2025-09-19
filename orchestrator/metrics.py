@@ -46,19 +46,19 @@ def _percentile(values: Sequence[float], percentile: float) -> float:
     return float(values[lower] * (1 - weight) + values[upper] * weight)
 
 
-def _window_events(days: int, now: datetime | None = None) -> list[int]:
+def _window_events(tenant_id: str, days: int, now: datetime | None = None) -> list[int]:
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=days)
     values: list[int] = []
     from . import credit
 
-    for event in credit.all_events():
+    for event in credit.all_events(tenant_id):
         if event.ts >= cutoff:
             values.append(int(event.impact.secondsSaved))
     return values
 
 
-def seconds_saved_window(window_days: int) -> dict[str, Any]:
+def seconds_saved_window(tenant_id: str, window_days: int) -> dict[str, Any]:
     """Return descriptive statistics for a rolling window."""
 
     if window_days <= 0:
@@ -70,7 +70,7 @@ def seconds_saved_window(window_days: int) -> dict[str, Any]:
             "p50Seconds": 0.0,
             "p90Seconds": 0.0,
         }
-    values = sorted(_window_events(window_days))
+    values = sorted(_window_events(tenant_id, window_days))
     total = float(sum(values))
     count = len(values)
     avg = float(total / count) if count else 0.0
@@ -84,12 +84,12 @@ def seconds_saved_window(window_days: int) -> dict[str, Any]:
     }
 
 
-def seconds_saved_summary(windows: Iterable[int] = (7, 30)) -> dict[str, Any]:
+def seconds_saved_summary(tenant_id: str, windows: Iterable[int] = (7, 30)) -> dict[str, Any]:
     """Return summary statistics for the provided windows (in days)."""
 
     summaries: dict[str, Any] = {}
     for window in windows:
-        summaries[f"{window}d"] = seconds_saved_window(window)
+        summaries[f"{window}d"] = seconds_saved_window(tenant_id, window)
     return {"windows": summaries}
 
 
@@ -167,11 +167,11 @@ def _baseline_from_seed(seed: dict[str, Any]) -> list[IssueBaseline]:
     return baselines
 
 
-def _apply_seconds_by_issue() -> dict[str, float]:
+def _apply_seconds_by_issue(tenant_id: str) -> dict[str, float]:
     totals: dict[str, float] = {}
     from . import credit
 
-    for event in credit.all_events():
+    for event in credit.all_events(tenant_id):
         totals[event.issueKey] = totals.get(event.issueKey, 0.0) + float(event.impact.secondsSaved)
     return totals
 
@@ -188,12 +188,12 @@ def _summary(values: Iterable[float]) -> dict[str, Any]:
     }
 
 
-def ttr_frt_baseline(seed_path: Path | None = None) -> dict[str, Any]:
+def ttr_frt_baseline(tenant_id: str, seed_path: Path | None = None) -> dict[str, Any]:
     """Compare baseline ticket/response times with ledger improvements."""
 
     seed_payload = _load_seed_payload(seed_path or DEFAULT_SEED_PATH)
     baselines = _baseline_from_seed(seed_payload)
-    apply_totals = _apply_seconds_by_issue()
+    apply_totals = _apply_seconds_by_issue(tenant_id)
 
     ttr_baseline = []
     ttr_with_apply = []
@@ -220,12 +220,12 @@ def ttr_frt_baseline(seed_path: Path | None = None) -> dict[str, Any]:
     }
 
 
-def top_contributors(window_days: int = 30) -> list[dict[str, Any]]:
+def top_contributors(tenant_id: str, window_days: int = 30) -> list[dict[str, Any]]:
     now = datetime.now(UTC)
     since = now - timedelta(days=window_days)
     from . import credit
 
-    summary = credit.summary(since=since)
+    summary = credit.summary(tenant_id, since=since)
     return [
         {
             "id": contributor.id,
@@ -237,7 +237,7 @@ def top_contributors(window_days: int = 30) -> list[dict[str, Any]]:
     ]
 
 
-def throughput(window_days: int = 7, now: datetime | None = None) -> dict[str, Any]:
+def throughput(tenant_id: str, window_days: int = 7, now: datetime | None = None) -> dict[str, Any]:
     """Return apply throughput metrics for the specified window."""
 
     if window_days <= 0:
@@ -248,7 +248,7 @@ def throughput(window_days: int = 7, now: datetime | None = None) -> dict[str, A
 
     apply_events = [
         event
-        for event in credit.all_events()
+        for event in credit.all_events(tenant_id)
         if event.ts >= cutoff and str(event.action or "").startswith("apply")
     ]
     count = len(apply_events)

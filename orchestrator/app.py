@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import json
 import logging
 import os
 import time
@@ -11,13 +12,23 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 from rapidfuzz.distance import Levenshtein
 
+from sqlalchemy import select
+
 from clients.python.jira_adapter import JiraAdapter
 
-from . import audit, credit, metrics as metrics_module
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Histogram,
+    generate_latest,
+)
+
+from . import audit, credit, db, metrics as metrics_module
 from .models import Impact
 
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "http://localhost:9000")
@@ -53,6 +64,44 @@ WEBHOOK_EVENTS = [
 ]
 if not WEBHOOK_EVENTS:
     WEBHOOK_EVENTS = ["jira:issue_created"]
+
+DEFAULT_TENANT_ID = os.getenv("DEFAULT_TENANT_ID", "demo")
+DEFAULT_TENANT_SITE_ID = os.getenv("DEFAULT_TENANT_SITE_ID") or (
+    f"{DEFAULT_TENANT_ID}.site" if DEFAULT_TENANT_ID else None
+)
+DEFAULT_TENANT_SECRET = os.getenv("DEFAULT_TENANT_SECRET") or FORGE_SHARED_SECRET
+
+REGISTRY = CollectorRegistry()
+APPLIES_TOTAL = Counter(
+    "applies_total",
+    "Total apply operations",
+    ("tenant", "action"),
+    registry=REGISTRY,
+)
+SECONDS_SAVED_TOTAL = Counter(
+    "seconds_saved_total",
+    "Seconds saved credited to tenants",
+    ("tenant",),
+    registry=REGISTRY,
+)
+APPLY_LATENCY = Histogram(
+    "apply_latency_ms",
+    "Latency of apply operations in milliseconds",
+    ("tenant", "action"),
+    registry=REGISTRY,
+)
+IDEMPOTENCY_CONFLICTS = Counter(
+    "idempotency_conflicts_total",
+    "Conflicts triggered by Idempotency-Key reuse",
+    ("tenant",),
+    registry=REGISTRY,
+)
+SIGNATURE_FAILURES = Counter(
+    "signature_fail_total",
+    "Forge signature verification failures",
+    ("tenant",),
+    registry=REGISTRY,
+)
 
 logger = logging.getLogger("digital_spiral.orchestrator")
 
@@ -96,6 +145,19 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.on_event("startup")
+async def startup_event() -> None:
+    db.init_models()
+    if DEFAULT_TENANT_ID and DEFAULT_TENANT_SITE_ID and DEFAULT_TENANT_SECRET:
+        with db.session_scope() as session:
+            db.ensure_tenant(
+                session,
+                DEFAULT_TENANT_ID,
+                site_id=DEFAULT_TENANT_SITE_ID,
+                forge_shared_secret=DEFAULT_TENANT_SECRET,
+            )
+
+
 @app.get("/healthz")
 def healthz() -> Dict[str, str]:
     artifacts_dir = Path(os.getenv("ARTIFACTS_DIR", "artifacts"))
@@ -109,7 +171,35 @@ def healthz() -> Dict[str, str]:
         adapter._call("GET", "/rest/api/3/project")
     except Exception as exc:  # pragma: no cover - failure surfaces via HTTP
         raise HTTPException(503, f"Jira connectivity failed: {exc}") from exc
-    return {"status": "ok", "storage": "ok", "jira": "ok"}
+    try:
+        with db.session_scope() as session:
+            session.execute(select(1))
+    except Exception as exc:  # pragma: no cover - surfaces via HTTP
+        raise HTTPException(503, f"Database connectivity failed: {exc}") from exc
+    return {"status": "ok", "storage": "ok", "jira": "ok", "database": "ok"}
+
+
+@app.get("/readyz")
+def readyz() -> Dict[str, str]:
+    try:
+        with db.session_scope() as session:
+            if DEFAULT_TENANT_ID:
+                tenant = db.get_tenant(session, DEFAULT_TENANT_ID)
+                if tenant is None:
+                    raise HTTPException(503, "Default tenant not provisioned")
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - surfaces via HTTP
+        raise HTTPException(503, f"Database readiness check failed: {exc}") from exc
+    if not DEFAULT_TENANT_SECRET:
+        raise HTTPException(503, "Forge shared secret not configured")
+    return {"status": "ok"}
+
+
+@app.get("/metrics")
+def metrics_endpoint() -> Response:
+    payload = generate_latest(REGISTRY)
+    return Response(payload, media_type=CONTENT_TYPE_LATEST)
 
 
 def _client_hosts(request: Request) -> List[str]:
@@ -122,7 +212,9 @@ def _client_hosts(request: Request) -> List[str]:
     return hosts
 
 
-def verify_forge_signature(request: Request, body: bytes) -> None:
+def verify_forge_signature(secret: str | None, request: Request, body: bytes) -> None:
+    if not secret:
+        return
     signature = request.headers.get("x-forge-signature")
     if not signature:
         raise HTTPException(401, "Missing X-Forge-Signature")
@@ -134,29 +226,61 @@ def verify_forge_signature(request: Request, body: bytes) -> None:
         digest = value
     if algorithm.lower() != "sha256":
         raise HTTPException(400, "Unsupported signature algorithm")
-    expected = hashlib.sha256(FORGE_SHARED_SECRET.encode("utf-8") + body).hexdigest()
+    expected = hashlib.sha256(secret.encode("utf-8") + body).hexdigest()
     if not hmac.compare_digest(digest, expected):
         raise HTTPException(401, "Invalid signature")
 
 
-def ensure_authorized(request: Request, *, body: bytes | None = None) -> Optional[str]:
+def _extract_tenant_id(request: Request) -> str:
+    header = (
+        request.headers.get("x-tenant-id")
+        or request.headers.get("x-ds-tenant")
+        or request.headers.get("x-forge-tenant-id")
+    )
+    if header:
+        return header.strip()
+    if DEFAULT_TENANT_ID:
+        return DEFAULT_TENANT_ID
+    raise HTTPException(400, "Missing X-Tenant-Id")
+
+
+def ensure_authorized(request: Request, *, body: bytes | None = None) -> str:
+    tenant = _extract_tenant_id(request)
+    tenant_secret = DEFAULT_TENANT_SECRET
+    with db.session_scope() as session:
+        db_secret = db.get_tenant_secret(session, tenant)
+        if db_secret:
+            tenant_secret = db_secret
+
     if ORCHESTRATOR_TOKEN:
         expected = f"Bearer {ORCHESTRATOR_TOKEN}"
         provided = request.headers.get("authorization")
         if provided != expected:
             raise HTTPException(401, "Unauthorized")
     else:
-        secret = request.headers.get("x-ds-secret")
-        if not secret or not hmac.compare_digest(secret, FORGE_SHARED_SECRET):
+        provided_secret = request.headers.get("x-ds-secret")
+        if (
+            not provided_secret
+            or not tenant_secret
+            or not hmac.compare_digest(provided_secret, tenant_secret)
+        ):
             raise HTTPException(401, "Unauthorized")
-    if FORGE_SHARED_SECRET:
-        verify_forge_signature(request, body or b"")
+
+    if tenant_secret:
+        try:
+            verify_forge_signature(tenant_secret, request, body or b"")
+        except HTTPException:
+            SIGNATURE_FAILURES.labels(tenant=tenant).inc()
+            raise
+    elif request.headers.get("x-forge-signature"):
+        SIGNATURE_FAILURES.labels(tenant=tenant).inc()
+        raise HTTPException(401, "Forge shared secret not configured")
+
     if FORGE_ALLOWLIST:
         hosts = _client_hosts(request)
         if not any(host in FORGE_ALLOWLIST for host in hosts):
             raise HTTPException(403, "Forbidden")
-    tenant = request.headers.get("x-ds-tenant")
-    return tenant if tenant else None
+    return tenant
 
 
 def resolve_actor(request: Request) -> Dict[str, Any]:
@@ -447,7 +571,7 @@ def _resolve_labels(issue_key: str, action: ApplyAction) -> Tuple[List[str], str
 def perform_apply(
     issue_key: str,
     action: ApplyAction,
-    tenant: Optional[str],
+    tenant: str,
     actor: Dict[str, Any],
     *,
     context: Optional[Dict[str, Any]] = None,
@@ -570,11 +694,15 @@ async def apply(request: Request, payload: ApplyIn):
     if not idem_key:
         raise HTTPException(400, "Missing Idempotency-Key")
     payload_hash = hashlib.sha256(body or b"").hexdigest()
-    if idem_key in APPLY_RESULTS:
-        cached_hash = APPLY_FINGERPRINTS.get(idem_key)
-        if cached_hash and cached_hash != payload_hash:
-            raise HTTPException(409, "Idempotency-Key conflict")
-        return APPLY_RESULTS[idem_key]
+    request_payload = payload.model_dump(mode="json", by_alias=True)
+    with db.session_scope() as session:
+        existing = db.get_apply_by_idempotency(session, tenant, idem_key)
+        if existing:
+            if existing.payload_hash != payload_hash:
+                IDEMPOTENCY_CONFLICTS.labels(tenant=tenant).inc()
+                raise HTTPException(409, "Idempotency-Key conflict")
+            if existing.result:
+                return existing.result
     try:
         apply_data = perform_apply(
             payload.issueKey,
@@ -623,33 +751,52 @@ async def apply(request: Request, payload: ApplyIn):
         actor,
         execution_context,
     )
+    event_payload: Dict[str, Any]
+    response_payload: Dict[str, Any]
     try:
-        event = credit.append_event(
-            issue_key=payload.issueKey,
-            action="apply",
-            actor=actor,
-            inputs=apply_data["proposal_context"],
-            impact=Impact(seconds_saved=int(apply_data["seconds_saved"]), quality=apply_data["quality"]),
-            attributions=shares,
-            parents=[payload.proposalEventId] if payload.proposalEventId else [],
-            idempotency_key=idem_key,
-            attribution_reason=attribution_reason,
-        )
+        with db.session_scope() as session:
+            event = credit.append_event(
+                tenant,
+                issue_key=payload.issueKey,
+                action="apply",
+                actor=actor,
+                inputs=apply_data["proposal_context"],
+                impact=Impact(
+                    seconds_saved=int(apply_data["seconds_saved"]),
+                    quality=apply_data["quality"],
+                ),
+                attributions=shares,
+                parents=[payload.proposalEventId] if payload.proposalEventId else [],
+                idempotency_key=idem_key,
+                attribution_reason=attribution_reason,
+                session=session,
+            )
+            event_payload = event.model_dump(mode="json", by_alias=True)
+            response_payload = {
+                "ok": True,
+                "result": apply_data["result"],
+                "credit": event_payload,
+            }
+            record_model = db.ApplyActionRecord(
+                tenant_id=tenant,
+                issue_key=payload.issueKey,
+                payload=request_payload,
+                result=response_payload,
+                status="success",
+                payload_hash=payload_hash,
+                idempotency_key=idem_key,
+                latency_ms=int(apply_data["record"].get("apply_ms", 0)),
+            )
+            session.add(record_model)
     except ValueError as exc:
+        IDEMPOTENCY_CONFLICTS.labels(tenant=tenant).inc()
         raise HTTPException(409, str(exc)) from exc
 
     record = apply_data["record"]
     record["credit_event_id"] = event.id
-    event_payload = event.model_dump(mode="json", by_alias=True)
     entry = apply_data["entry"]
     entry.setdefault("credit_events", []).append(event_payload)
     entry["last_credit_event"] = event_payload
-
-    response_payload = {
-        "ok": True,
-        "result": apply_data["result"],
-        "credit": event_payload,
-    }
 
     audit.log_event(
         {
@@ -662,33 +809,41 @@ async def apply(request: Request, payload: ApplyIn):
             "eventId": event.id,
         }
     )
-    APPLY_RESULTS[idem_key] = response_payload
-    APPLY_FINGERPRINTS[idem_key] = payload_hash
+    action_label = payload.action.kind
+    APPLIES_TOTAL.labels(tenant=tenant, action=action_label).inc()
+    APPLY_LATENCY.labels(tenant=tenant, action=action_label).observe(float(record.get("apply_ms", 0)))
+    SECONDS_SAVED_TOTAL.labels(tenant=tenant).inc(float(apply_data["seconds_saved"]))
     return response_payload
 
 
 # -------- Ledger read --------
 @app.get("/v1/ledger")
-def get_ledger(issueKey: str = Query(..., alias="issueKey")):
+def get_ledger(request: Request, issueKey: str = Query(..., alias="issueKey")):
+    ensure_authorized(request, body=b"")
     return LEDGER.get(issueKey, {"issueKey": issueKey, "history": []})
 
 
 @app.get("/v1/credit/summary")
 def credit_summary_endpoint(
-    since: Optional[str] = Query(None), limit: int = Query(10, ge=1, le=50)
+    request: Request,
+    since: Optional[str] = Query(None),
+    limit: int = Query(10, ge=1, le=50),
 ):
-    return credit.summary(since=parse_since(since), limit=limit)
+    tenant = ensure_authorized(request, body=b"")
+    return credit.summary(tenant, since=parse_since(since), limit=limit)
 
 
 @app.get("/v1/credit/agent/{id}")
 def credit_agent_endpoint(
     id: str,
+    request: Request,
     window: str = Query("30d"),
     limit: int = Query(20, ge=0, le=100),
 ):
+    tenant = ensure_authorized(request, body=b"")
     days = parse_window_days(window)
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    summary = credit.agent_summary(id, since=since, limit=limit)
+    summary = credit.agent_summary(tenant, id, since=since, limit=limit)
     events = [event.model_dump(mode="json", by_alias=True) for event in summary.events]
     return {
         "agent": summary.agentId,
@@ -702,11 +857,13 @@ def credit_agent_endpoint(
 @app.get("/v1/credit/issue/{key}")
 def credit_issue_endpoint(
     key: str,
+    request: Request,
     since: Optional[str] = Query(None),
     limit: int = Query(20, ge=0, le=200),
 ):
+    tenant = ensure_authorized(request, body=b"")
     since_dt = parse_since(since)
-    summary = credit.issue_summary(key, since=since_dt, limit=limit)
+    summary = credit.issue_summary(tenant, key, since=since_dt, limit=limit)
     contributors = [
         {
             "agent_id": contributor.id,
@@ -716,7 +873,7 @@ def credit_issue_endpoint(
         }
         for contributor in summary.contributors
     ]
-    events = credit.events_for_issue(key)
+    events = credit.events_for_issue(tenant, key)
     if limit:
         events = events[-limit:]
     events_payload = [event.model_dump(mode="json", by_alias=True) for event in reversed(events)]
@@ -734,14 +891,20 @@ def credit_issue_endpoint(
 
 
 @app.get("/v1/credit/chain")
-def credit_chain_endpoint(limit: int = Query(100, ge=1, le=500)):
-    return credit.credit_chain(limit=limit)
+def credit_chain_endpoint(request: Request, limit: int = Query(100, ge=1, le=500)):
+    tenant = ensure_authorized(request, body=b"")
+    return credit.credit_chain(tenant, limit=limit)
 
 
 @app.get("/v1/credit/agents/top")
-def credit_agents_top(window: str = Query("30d"), limit: int = Query(10, ge=1, le=100)):
+def credit_agents_top(
+    request: Request,
+    window: str = Query("30d"),
+    limit: int = Query(10, ge=1, le=100),
+):
+    tenant = ensure_authorized(request, body=b"")
     days = parse_window_days(window)
-    rankings = credit.top_agents(days, limit=None)
+    rankings = credit.top_agents(tenant, days, limit=None)
     payload = [
         {
             "agent_id": item.get("agent_id"),
@@ -754,15 +917,21 @@ def credit_agents_top(window: str = Query("30d"), limit: int = Query(10, ge=1, l
 
 
 @app.get("/v1/metrics/seconds-saved")
-def metrics_seconds_saved(window: str = Query("7d")):
+def metrics_seconds_saved(request: Request, window: str = Query("7d")):
+    tenant = ensure_authorized(request, body=b"")
     days = parse_window_days(window)
-    return metrics_module.seconds_saved_window(days)
+    return metrics_module.seconds_saved_window(tenant, days)
 
 
 @app.get("/v1/agents/top")
-def agents_top_endpoint(window: str = Query("30d"), limit: int = Query(10, ge=1, le=100)):
+def agents_top_endpoint(
+    request: Request,
+    window: str = Query("30d"),
+    limit: int = Query(10, ge=1, le=100),
+):
+    tenant = ensure_authorized(request, body=b"")
     days = parse_window_days(window)
-    rankings = credit.top_agents(days, limit=None)
+    rankings = credit.top_agents(tenant, days, limit=None)
     total_seconds = sum(float(item.get("seconds", 0.0)) for item in rankings) or 1.0
     payload = [
         {
@@ -777,20 +946,23 @@ def agents_top_endpoint(window: str = Query("30d"), limit: int = Query(10, ge=1,
 
 
 @app.get("/v1/metrics/throughput")
-def metrics_throughput(window: str = Query("7d")):
+def metrics_throughput(request: Request, window: str = Query("7d")):
+    tenant = ensure_authorized(request, body=b"")
     days = parse_window_days(window)
-    return metrics_module.throughput(window_days=days)
+    return metrics_module.throughput(tenant, window_days=days)
 
 
 @app.get("/v1/metrics/ttr_frt_baseline")
-def metrics_ttr_frt_baseline():
-    return metrics_module.ttr_frt_baseline()
+def metrics_ttr_frt_baseline(request: Request):
+    tenant = ensure_authorized(request, body=b"")
+    return metrics_module.ttr_frt_baseline(tenant)
 
 
 @app.get("/v1/metrics/top-contributors")
-def metrics_top_contributors(window: str = Query("30d")):
+def metrics_top_contributors(request: Request, window: str = Query("30d")):
+    tenant = ensure_authorized(request, body=b"")
     days = parse_window_days(window)
-    contributors = metrics_module.top_contributors(window_days=days)
+    contributors = metrics_module.top_contributors(tenant, window_days=days)
     return {"windowDays": days, "contributors": contributors}
 
 
