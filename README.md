@@ -169,9 +169,12 @@ Webhook deliveries include deterministic headers:
 - `X-MockJira-Event-Id` – stable event identifier used for dedupe/replay.
 - `X-MockJira-Signature-Version` – current signature algorithm version (`2`).
 - `X-MockJira-Signature` – `sha256=` digest computed from
-  `sha256(secret + body)`.
+`sha256(secret + body)`.
 - `X-MockJira-Legacy-Signature` – optional `sha256` HMAC when
   `WEBHOOK_SIGNATURE_COMPAT=1` is enabled (for old clients).
+
+Legacy compatibility is disabled by default; enable the flag before
+initialising the store if you need to exercise legacy signature tests.
 
 Example verifier:
 

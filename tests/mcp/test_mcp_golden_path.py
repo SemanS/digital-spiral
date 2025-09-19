@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from mcp_jira import tools
+from orchestrator import credit
 
 
-def test_mcp_tools_round_trip(live_server: str) -> None:
+def test_mcp_tools_round_trip(live_server: str, tmp_path: Path) -> None:
     issue = tools.t_jira_create_issue(
         {
             "project_key": "DEV",
@@ -72,3 +75,14 @@ def test_mcp_tools_round_trip(live_server: str) -> None:
         "jsm.create_request",
         "agile.list_sprints",
     }.issubset(registry_keys)
+
+    ledger_path = tmp_path / "ledger.jsonl"
+    credit.reset_ledger(ledger_path, truncate=True)
+    event = credit.build_apply_event(
+        key,
+        {"id": "mcp-comment", "kind": "comment"},
+        {"type": "human", "id": "mcp"},
+        {"secondsSaved": 120, "quality": 0.9},
+    )
+    assert event.issueKey == key
+    assert ledger_path.read_text(encoding="utf-8").strip()

@@ -9,14 +9,30 @@ import random
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from mockjira.fixtures.generator import GenConfig, generate_seed_json
+
+DEFAULT_CFG = GenConfig()
 from orchestrator import credit
 from orchestrator.metrics import estimate_savings
+
+
+def _adf_text(text: str) -> dict[str, Any]:
+    return {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {
+                "type": "paragraph",
+                "content": [{"type": "text", "text": text}],
+            }
+        ],
+    }
 
 
 def _load_config(path: str | None) -> tuple[dict[str, object] | None, dict[str, object]]:
@@ -136,6 +152,143 @@ def _generate_credit_history(
     return events_created
 
 
+def _normalise_sprint_windows(payload: dict[str, Any], rng: random.Random) -> None:
+    raw_sprints = payload.get("sprints")
+    if not isinstance(raw_sprints, list):
+        return
+    now = datetime.now(UTC)
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for sprint in raw_sprints:
+        if not isinstance(sprint, dict):
+            continue
+        try:
+            board_id = int(sprint.get("board_id") or sprint.get("boardId") or 0)
+        except (TypeError, ValueError):
+            board_id = 0
+        grouped.setdefault(board_id, []).append(sprint)
+    for sprints in grouped.values():
+        if not sprints:
+            continue
+        sprints.sort(
+            key=lambda item: _parse_timestamp(item.get("start_date") or item.get("startDate"), now)
+            or datetime.min.replace(tzinfo=UTC)
+        )
+        sample_start = _parse_timestamp(sprints[0].get("start_date") or sprints[0].get("startDate"), now)
+        sample_end = _parse_timestamp(sprints[0].get("end_date") or sprints[0].get("endDate"), sample_start + timedelta(days=14))
+        length_days = max(int((sample_end - sample_start).days) if sample_end and sample_start else 14, 7)
+        active_candidates = [item for item in sprints if str(item.get("state", "")).lower() == "active"]
+        active = active_candidates[-1] if active_candidates else sprints[-1]
+        active_start = now - timedelta(days=rng.randint(1, 2))
+        active_end = active_start + timedelta(days=length_days)
+        active["state"] = "active"
+        active["start_date"] = active_start.isoformat()
+        active["end_date"] = active_end.isoformat()
+        for sprint in sprints:
+            if sprint is active:
+                continue
+            start = _parse_timestamp(sprint.get("start_date") or sprint.get("startDate"), now)
+            end = _parse_timestamp(sprint.get("end_date") or sprint.get("endDate"), start + timedelta(days=length_days))
+            if end and end < active_start:
+                sprint["state"] = "closed"
+                sprint["end_date"] = end.isoformat()
+                if start:
+                    sprint["start_date"] = start.isoformat()
+            elif start and start > active_end:
+                sprint["state"] = "future"
+                sprint["start_date"] = start.isoformat()
+                sprint["end_date"] = (start + timedelta(days=length_days)).isoformat()
+
+
+def _next_numeric_id(items: Iterable[dict[str, Any]], field: str, default: int) -> int:
+    current = default
+    for item in items:
+        try:
+            value = int(item.get(field))
+        except (TypeError, ValueError):
+            continue
+        current = max(current, value)
+    return current + 1
+
+
+def _inject_handoff_threads(payload: dict[str, Any], probability: float, rng: random.Random) -> None:
+    if probability <= 0.0:
+        return
+    issues_raw = payload.get("issues")
+    if not isinstance(issues_raw, list):
+        return
+    issues = [issue for issue in issues_raw if isinstance(issue, dict) and issue.get("key")]
+    if not issues:
+        return
+    users = [
+        str(user.get("account_id"))
+        for user in payload.get("users", [])
+        if isinstance(user, dict) and user.get("account_id")
+    ]
+    comment_seed = _next_numeric_id(
+        (comment for issue in issues for comment in issue.get("comments", []) if isinstance(comment, dict)),
+        "id",
+        200000,
+    )
+    link_seed = _next_numeric_id(
+        (link for issue in issues for link in issue.get("links", []) if isinstance(link, dict)),
+        "id",
+        60000,
+    )
+    seen_pairs: set[tuple[str, str]] = set()
+    for issue in issues:
+        if rng.random() >= probability:
+            continue
+        partner_candidates = [candidate for candidate in issues if candidate is not issue]
+        if not partner_candidates:
+            break
+        partner = rng.choice(partner_candidates)
+        pair = tuple(sorted((str(issue.get("key")), str(partner.get("key")))))
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        labels = [str(label) for label in issue.get("labels", []) if isinstance(label, str)]
+        if "handoff" not in labels:
+            labels.append("handoff")
+            issue["labels"] = labels
+        base_time = _parse_timestamp(issue.get("updated") or issue.get("created"), datetime.now(UTC))
+        comment_time = (base_time or datetime.now(UTC)) + timedelta(minutes=rng.randint(5, 240))
+        author = issue.get("assignee_id") or issue.get("reporter_id") or (users[0] if users else "alice")
+        handoff_code = f"HO-{rng.randint(1000, 9999)}"
+        comment_payload = {
+            "id": str(comment_seed),
+            "author_id": author,
+            "body": _adf_text(f"handoff-id: {handoff_code} ready for assist."),
+            "created": comment_time.isoformat(),
+        }
+        comment_seed += 1
+        issue.setdefault("comments", []).append(comment_payload)
+        issue["comments"].sort(key=lambda item: item.get("created", ""))
+        issue["updated"] = comment_time.isoformat()
+        link_payload = {
+            "id": str(link_seed),
+            "type": {"name": "Relates", "outward": "relates to", "inward": "relates to"},
+            "outwardIssue": {
+                "id": partner.get("id"),
+                "key": partner.get("key"),
+                "fields": {"summary": partner.get("summary")},
+            },
+        }
+        link_reverse = {
+            "id": str(link_seed),
+            "type": {"name": "Relates", "outward": "relates to", "inward": "relates to"},
+            "inwardIssue": {
+                "id": issue.get("id"),
+                "key": issue.get("key"),
+                "fields": {"summary": issue.get("summary")},
+            },
+        }
+        link_seed += 1
+        issue.setdefault("links", []).append(link_payload)
+        partner.setdefault("links", []).append(link_reverse)
+        partner["updated"] = comment_time.isoformat()
+
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate mock Jira seed data")
     parser.add_argument(
@@ -173,8 +326,60 @@ def build_parser() -> argparse.ArgumentParser:
         "--issues-per-project",
         dest="issues_per_project",
         type=int,
-        default=80,
+        default=None,
         help="Average number of issues to create per project",
+    )
+    parser.add_argument(
+        "--issues",
+        type=int,
+        default=150,
+        help="Average number of issues to create per software project (overrides --issues-per-project)",
+    )
+    parser.add_argument(
+        "--boards-per-sw-project",
+        dest="boards_per_sw_project",
+        type=int,
+        default=1,
+        help="Number of software boards to generate per project",
+    )
+    parser.add_argument(
+        "--sprints-per-board",
+        dest="sprints_per_board",
+        type=int,
+        default=None,
+        help="Number of sprints to generate per software board",
+    )
+    parser.add_argument(
+        "--sprints",
+        type=int,
+        default=8,
+        help="Number of sprints per board (overrides --sprints-per-board)",
+    )
+    parser.add_argument(
+        "--sprint-length-days",
+        dest="sprint_length_days",
+        type=int,
+        default=14,
+        help="Length of a sprint in days",
+    )
+    parser.add_argument(
+        "--comments-per-issue",
+        dest="comments_per_issue_avg",
+        type=float,
+        default=None,
+        help="Average number of comments per issue",
+    )
+    parser.add_argument(
+        "--comments",
+        type=float,
+        default=25.0,
+        help="Average number of comments per issue (overrides --comments-per-issue)",
+    )
+    parser.add_argument(
+        "--handoff",
+        type=float,
+        default=0.2,
+        help="Probability of injecting a synthetic handoff thread per issue",
     )
     return parser
 
@@ -186,6 +391,24 @@ def main(argv: list[str] | None = None) -> None:
     seed_payload, cfg_overrides = _load_config(args.config)
     credit_seed = int(cfg_overrides.get("seed", args.seed))
 
+    issues_per_project = cfg_overrides.get("issues_per_project")
+    if issues_per_project is None:
+        issues_per_project = args.issues if args.issues is not None else args.issues_per_project
+    if issues_per_project is None:
+        issues_per_project = DEFAULT_CFG.issues_per_project
+    sprints_per_board = cfg_overrides.get("sprints_per_board")
+    if sprints_per_board is None:
+        sprints_per_board = args.sprints if args.sprints is not None else args.sprints_per_board
+    if sprints_per_board is None:
+        sprints_per_board = DEFAULT_CFG.sprints_per_board
+    comments_avg = cfg_overrides.get("comments_per_issue_avg")
+    if comments_avg is None:
+        comments_avg = args.comments if args.comments is not None else args.comments_per_issue_avg
+    if comments_avg is None:
+        comments_avg = DEFAULT_CFG.comments_per_issue_avg
+    boards_per_sw_project = cfg_overrides.get("boards_per_sw_project", args.boards_per_sw_project)
+    handoff_probability = float(cfg_overrides.get("handoff_probability", args.handoff))
+
     if seed_payload is None:
         cfg = GenConfig(
             seed=int(cfg_overrides.get("seed", args.seed)),
@@ -196,31 +419,21 @@ def main(argv: list[str] | None = None) -> None:
             servicedesk_projects=int(
                 cfg_overrides.get("servicedesk_projects", args.servicedesk_projects)
             ),
-            issues_per_project=int(
-                cfg_overrides.get("issues_per_project", args.issues_per_project)
-            ),
-            boards_per_sw_project=int(
-                cfg_overrides.get("boards_per_sw_project", GenConfig.boards_per_sw_project)
-            ),
-            sprints_per_board=int(
-                cfg_overrides.get("sprints_per_board", GenConfig.sprints_per_board)
-            ),
+            issues_per_project=int(issues_per_project),
+            boards_per_sw_project=int(boards_per_sw_project),
+            sprints_per_board=int(sprints_per_board),
             sprint_length_days=int(
-                cfg_overrides.get("sprint_length_days", GenConfig.sprint_length_days)
+                cfg_overrides.get("sprint_length_days", DEFAULT_CFG.sprint_length_days)
             ),
-            comments_per_issue_avg=float(
-                cfg_overrides.get(
-                    "comments_per_issue_avg", GenConfig.comments_per_issue_avg
-                )
-            ),
+            comments_per_issue_avg=float(comments_avg),
             transition_rate=float(
-                cfg_overrides.get("transition_rate", GenConfig.transition_rate)
+                cfg_overrides.get("transition_rate", DEFAULT_CFG.transition_rate)
             ),
             link_probability=float(
-                cfg_overrides.get("link_probability", GenConfig.link_probability)
+                cfg_overrides.get("link_probability", DEFAULT_CFG.link_probability)
             ),
             assignee_churn_prob=float(
-                cfg_overrides.get("assignee_churn_prob", GenConfig.assignee_churn_prob)
+                cfg_overrides.get("assignee_churn_prob", DEFAULT_CFG.assignee_churn_prob)
             ),
         )
         payload = generate_seed_json(cfg)
@@ -230,6 +443,9 @@ def main(argv: list[str] | None = None) -> None:
 
     output_path = Path(args.out)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    post_rng = random.Random(credit_seed + 97)
+    _normalise_sprint_windows(payload, post_rng)
+    _inject_handoff_threads(payload, handoff_probability, post_rng)
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
     print(f"Seed saved to {output_path}")

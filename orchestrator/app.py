@@ -7,6 +7,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -16,13 +17,13 @@ from rapidfuzz.distance import Levenshtein
 
 from clients.python.jira_adapter import JiraAdapter
 
-from . import credit
+from . import audit, credit, metrics as metrics_module
 from .metrics import estimate_savings
 
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "http://localhost:9000")
 JIRA_TOKEN = os.getenv("JIRA_TOKEN", "mock-token")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "dev-secret")
-ORCH_SECRET = os.getenv("ORCH_SECRET", "forge-dev-secret")
+FORGE_SHARED_SECRET = os.getenv("FORGE_SHARED_SECRET") or os.getenv("ORCH_SECRET", "forge-dev-secret")
 FORGE_ALLOWLIST = {
     host.strip()
     for host in os.getenv("FORGE_ALLOWLIST", "").split(",")
@@ -83,12 +84,32 @@ class ApplyIn(BaseModel):
     action: ApplyAction
 
 
+class SecondsSavedIn(BaseModel):
+    windows: Optional[List[int]] = None
+
+
 app = FastAPI(title="Digital Spiral Orchestrator (Jira MVP)")
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/healthz")
+def healthz() -> Dict[str, str]:
+    artifacts_dir = Path(os.getenv("ARTIFACTS_DIR", "artifacts"))
+    probe_path = artifacts_dir / ".orch-health"
+    try:
+        probe_path.parent.mkdir(parents=True, exist_ok=True)
+        probe_path.write_text(str(time.time()), encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - failure surfaces via HTTP
+        raise HTTPException(503, f"Storage check failed: {exc}") from exc
+    try:
+        adapter._call("GET", "/rest/api/3/project")
+    except Exception as exc:  # pragma: no cover - failure surfaces via HTTP
+        raise HTTPException(503, f"Jira connectivity failed: {exc}") from exc
+    return {"status": "ok", "storage": "ok", "jira": "ok"}
 
 
 def _client_hosts(request: Request) -> List[str]:
@@ -103,7 +124,7 @@ def _client_hosts(request: Request) -> List[str]:
 
 def ensure_authorized(request: Request) -> Optional[str]:
     secret = request.headers.get("x-ds-secret")
-    if not secret or not hmac.compare_digest(secret, ORCH_SECRET):
+    if not secret or not hmac.compare_digest(secret, FORGE_SHARED_SECRET):
         raise HTTPException(401, "Unauthorized")
     if FORGE_ALLOWLIST:
         hosts = _client_hosts(request)
@@ -151,6 +172,19 @@ def parse_since(value: Optional[str]) -> Optional[datetime]:
     return parsed
 
 
+def parse_window_days(raw: str) -> int:
+    candidate = (raw or "").strip().lower()
+    if candidate.endswith("d"):
+        candidate = candidate[:-1]
+    try:
+        days = int(candidate)
+    except ValueError as exc:  # pragma: no cover - FastAPI surfaces HTTP
+        raise HTTPException(400, "Invalid window parameter") from exc
+    if days <= 0 or days > 365:
+        raise HTTPException(400, "Window parameter out of range")
+    return days
+
+
 def record_tenant(issue_key: str, tenant: Optional[str]) -> None:
     if not tenant:
         return
@@ -168,6 +202,24 @@ def lookup_suggestion(issue_key: str, action_id: str) -> Optional[Dict[str, Any]
         if proposal.get("id") == action_id:
             return proposal
     return None
+
+
+def record_apply_failure(
+    issue_key: str, action: ApplyAction, actor: Dict[str, Any], reason: Optional[str] = None
+) -> None:
+    inputs: Dict[str, Any] = {"proposalId": action.id, "kind": action.kind}
+    if reason:
+        inputs["reason"] = reason
+    credit.append_event(
+        {
+            "issueKey": issue_key,
+            "actor": actor,
+            "action": "apply.failed",
+            "inputs": inputs,
+            "impact": {"secondsSaved": 0, "quality": 0.0},
+            "attribution": {"split": []},
+        }
+    )
 
 
 async def ensure_webhook_registered() -> None:
@@ -495,7 +547,47 @@ def apply(request: Request, payload: ApplyIn):
         raise HTTPException(400, "Missing Idempotency-Key")
     if idem_key in APPLY_RESULTS:
         return APPLY_RESULTS[idem_key]
-    result = perform_apply(payload.issueKey, payload.action, tenant, actor)
+    try:
+        result = perform_apply(payload.issueKey, payload.action, tenant, actor)
+    except HTTPException as exc:
+        reason = str(exc.detail) if exc.detail else "HTTP error"
+        record_apply_failure(payload.issueKey, payload.action, actor, reason)
+        audit.log_event(
+            {
+                "event": "apply.failed",
+                "issueKey": payload.issueKey,
+                "actionId": payload.action.id,
+                "actor": actor,
+                "tenant": tenant,
+                "reason": reason,
+            }
+        )
+        raise
+    except Exception as exc:  # pragma: no cover - defensive guard
+        reason = str(exc)
+        record_apply_failure(payload.issueKey, payload.action, actor, reason)
+        audit.log_event(
+            {
+                "event": "apply.failed",
+                "issueKey": payload.issueKey,
+                "actionId": payload.action.id,
+                "actor": actor,
+                "tenant": tenant,
+                "reason": reason,
+            }
+        )
+        raise
+    audit.log_event(
+        {
+            "event": "apply.success",
+            "issueKey": payload.issueKey,
+            "actionId": payload.action.id,
+            "actor": actor,
+            "tenant": tenant,
+            "secondsSaved": result.get("credit", {}).get("secondsSaved"),
+            "eventId": result.get("credit", {}).get("eventId"),
+        }
+    )
     APPLY_RESULTS[idem_key] = result
     return result
 
@@ -517,19 +609,46 @@ def credit_summary_endpoint(
 def credit_agent_endpoint(
     id: str, since: Optional[str] = Query(None), limit: int = Query(20, ge=0, le=100)
 ):
-    return credit.agent_summary(id, since=parse_since(since), limit=limit)
+    return credit.rollup_for_agent(id, since=parse_since(since), limit=limit)
 
 
 @app.get("/v1/credit/issue/{key}")
 def credit_issue_endpoint(
     key: str, since: Optional[str] = Query(None), limit: int = Query(5, ge=0, le=50)
 ):
-    return credit.issue_summary(key, since=parse_since(since), limit=limit)
+    return credit.rollup_for_issue(key, since=parse_since(since), limit=limit)
 
 
 @app.get("/v1/credit/chain")
 def credit_chain_endpoint(limit: int = Query(100, ge=1, le=500)):
     return credit.credit_chain(limit=limit)
+
+
+@app.post("/v1/metrics/seconds-saved")
+def metrics_seconds_saved(payload: SecondsSavedIn | None = None):
+    raw_windows = payload.windows if payload and payload.windows else [7, 30]
+    windows: List[int] = []
+    for value in raw_windows:
+        if value is None:
+            continue
+        if value <= 0 or value > 365:
+            raise HTTPException(400, "Window value out of range")
+        windows.append(int(value))
+    if not windows:
+        windows = [7, 30]
+    return metrics_module.seconds_saved_summary(windows)
+
+
+@app.get("/v1/metrics/ttr_frt_baseline")
+def metrics_ttr_frt_baseline():
+    return metrics_module.ttr_frt_baseline()
+
+
+@app.get("/v1/metrics/top-contributors")
+def metrics_top_contributors(window: str = Query("30d")):
+    days = parse_window_days(window)
+    contributors = metrics_module.top_contributors(window_days=days)
+    return {"windowDays": days, "contributors": contributors}
 
 
 # -------- Tiny UI --------
