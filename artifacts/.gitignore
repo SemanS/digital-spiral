@@ -1,2 +1,4 @@
 *
 !.gitignore
+!credit-ledger.jsonl
+!seed.json

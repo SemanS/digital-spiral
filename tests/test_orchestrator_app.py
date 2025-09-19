@@ -3,12 +3,11 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-
-import orchestrator.app as orchestrator_module
 
 
 class DummyAdapter:
@@ -76,7 +75,13 @@ def orchestrator_test_app(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ORCH_SECRET", "unit-shared-secret")
     monkeypatch.setenv("ORCHESTRATOR_BASE_URL", "http://orchestrator:7010")
     monkeypatch.setenv("AUTO_REGISTER_WEBHOOK", "1")
+    ledger_path = Path("artifacts/test-credit-ledger.jsonl")
+    if ledger_path.exists():
+        ledger_path.unlink()
+    monkeypatch.setenv("CREDIT_LEDGER_PATH", str(ledger_path))
+    orchestrator_module = importlib.import_module("orchestrator.app")
     module = importlib.reload(orchestrator_module)
+    module.credit.reset_ledger(ledger_path, truncate=True)
     adapter = DummyAdapter()
     original_adapter = module.adapter
     module.adapter = adapter
@@ -89,6 +94,7 @@ def orchestrator_test_app(monkeypatch: pytest.MonkeyPatch):
     module.LEDGER.clear()
     module.SUGGESTIONS.clear()
     module.APPLY_RESULTS.clear()
+    module.credit.reset_ledger(ledger_path, truncate=True)
 
 
 def test_startup_registers_webhook(orchestrator_test_app):
@@ -116,8 +122,11 @@ def test_ingest_returns_proposals(orchestrator_test_app):
     assert payload["issueKey"] == "SUP-1"
     assert module.SUGGESTIONS["SUP-1"]["proposals"] == payload["proposals"]
     assert any(p["kind"] == "comment" for p in payload["proposals"])
+    assert all("estimatedSeconds" in proposal for proposal in payload["proposals"])
+    expected_total = sum(int(proposal["estimatedSeconds"]) for proposal in payload["proposals"])
     ledger_entry = module.LEDGER["SUP-1"]
-    assert ledger_entry["estimated_savings"]["seconds"] == module.DEFAULT_ESTIMATED_SAVINGS_SECONDS
+    assert ledger_entry["estimated_savings"]["seconds"] == payload["estimated_savings"]["seconds"]
+    assert payload["estimated_savings"]["seconds"] == expected_total
 
 
 def test_webhook_triggers_auto_ingest(orchestrator_test_app):
@@ -161,11 +170,15 @@ def test_apply_executes_full_plan(orchestrator_test_app):
         headers={
             "x-ds-secret": "unit-shared-secret",
             "Idempotency-Key": f"SUP-3:{comment_action['id']}",
+            "X-DS-Actor": "human.test-user",
+            "X-DS-Actor-Display": "Test User",
         },
     )
     assert apply_response.status_code == 200
     result = apply_response.json()
     assert result["ok"] is True
+    assert result["credit"]["secondsSaved"] > 0
+    assert result["credit"]["splits"]
     assert adapter.comments and adapter.comments[0][0] == "SUP-3"
 
     second_call = client.post(
@@ -174,6 +187,7 @@ def test_apply_executes_full_plan(orchestrator_test_app):
         headers={
             "x-ds-secret": "unit-shared-secret",
             "Idempotency-Key": f"SUP-3:{comment_action['id']}",
+            "X-DS-Actor": "human.test-user",
         },
     )
     assert second_call.status_code == 200
@@ -185,9 +199,32 @@ def test_apply_executes_full_plan(orchestrator_test_app):
         headers={
             "x-ds-secret": "unit-shared-secret",
             "Idempotency-Key": f"SUP-3:{label_action['id']}",
+            "X-DS-Actor": "human.test-user",
         },
     )
     assert apply_labels.status_code == 200
     assert adapter.updated_fields and adapter.updated_fields[0][1]["labels"]
     ledger_entry = module.LEDGER["SUP-3"]
     assert ledger_entry["total_credit_seconds"] > 0
+    issue_credit = client.get(
+        "/v1/credit/issue/SUP-3",
+        headers={"x-ds-secret": "unit-shared-secret"},
+    )
+    assert issue_credit.status_code == 200
+    issue_payload = issue_credit.json()
+    assert issue_payload["totalSecondsSaved"] >= result["credit"]["secondsSaved"]
+    chain_resp = client.get(
+        "/v1/credit/chain",
+        params={"limit": 5},
+        headers={"x-ds-secret": "unit-shared-secret"},
+    )
+    assert chain_resp.status_code == 200
+    chain_events = chain_resp.json()
+    assert any(event["id"] == result["credit"]["eventId"] for event in chain_events)
+    agent_summary = client.get(
+        "/v1/credit/agent/human.test-user",
+        headers={"x-ds-secret": "unit-shared-secret"},
+    )
+    assert agent_summary.status_code == 200
+    agent_payload = agent_summary.json()
+    assert agent_payload["totalSecondsSaved"] > 0

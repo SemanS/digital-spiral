@@ -5,7 +5,7 @@
     "days": 180,
     "software_projects": 1,
     "servicedesk_projects": 1,
-    "issues_per_project": 95,
+    "issues_per_project": 75,
     "boards_per_sw_project": 2,
     "sprints_per_board": 8,
     "sprint_length_days": 14,
