@@ -121,9 +121,17 @@ function describeCredit(credit: CreditInfo | null | undefined, actorId?: string 
     return '';
   }
   const seconds = Math.round(credit.secondsSaved);
-  const detail = formatEventSplits(credit.splits, actorId, seconds);
-  const base = `−${seconds}s credited`;
-  return detail ? `${base} (${detail})` : base;
+  const splits = credit.splits || [];
+  if (!splits.length) {
+    return `−${seconds}s`;
+  }
+  const detail = splits
+    .map((split) => {
+      const shareSeconds = Math.round(seconds * split.weight);
+      return `${participantLabel(split.id, actorId)} ${shareSeconds}s`;
+    })
+    .join(' / ');
+  return `−${seconds}s (${detail})`;
 }
 
 function formatSplitPercent(weight: number): string {

@@ -3,13 +3,32 @@ import { getProjectConfig } from './lib/config';
 import type { Proposal } from './lib/orchestrator';
 import { applyAction } from './lib/orchestrator';
 
+type ActorOptions = {
+  actorId?: string;
+  actorDisplay?: string;
+};
+
 export type ApplyInput = {
   issueKey: string;
   action: Proposal;
 };
 
-export async function executeApply(cfg: ProjectConfig, payload: ApplyInput) {
-  return applyAction(cfg, payload.issueKey, payload.action);
+function resolveActor(platformContext: any): ActorOptions | undefined {
+  const accountId =
+    (platformContext as any)?.accountId ??
+    (platformContext as any)?.userAccountId ??
+    (platformContext as any)?.localId ??
+    null;
+  const display = (platformContext as any)?.displayName ?? undefined;
+  if (!accountId) {
+    return display ? { actorDisplay: display } : undefined;
+  }
+  const actorId = `human.${accountId}`;
+  return display ? { actorId, actorDisplay: display } : { actorId };
+}
+
+export async function executeApply(cfg: ProjectConfig, payload: ApplyInput, opts?: ActorOptions) {
+  return applyAction(cfg, payload.issueKey, payload.action, opts);
 }
 
 export const run = async (event: any, context: any) => {
@@ -20,5 +39,6 @@ export const run = async (event: any, context: any) => {
     throw new Error('Digital Spiral not configured for this project.');
   }
 
-  return executeApply(cfg, { issueKey, action });
+  const actorOptions = resolveActor(context.platformContext);
+  return executeApply(cfg, { issueKey, action }, actorOptions);
 };

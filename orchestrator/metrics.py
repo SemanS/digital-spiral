@@ -11,24 +11,29 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 _BASELINES = {
-    "comment": 90,
-    "transition": 30,
-    "set-labels": 45,
-    "link": 60,
+    "comment": 30,
+    "transition": 45,
+    "set-labels": 20,
+    "link": 25,
 }
 
 DEFAULT_SEED_PATH = Path(os.getenv("SEED_DATA_PATH", "artifacts/forge_demo_seed.json"))
 
 
-def estimate_savings(action_kind: str, context: Mapping[str, Any] | None = None) -> int:
-    """Estimate seconds saved for a given action kind."""
+def estimate_seconds(action: str, context: Mapping[str, Any] | None = None) -> int:
+    """Estimate seconds saved for a given action type."""
 
-    base = _BASELINES.get(action_kind, 30)
+    base = _BASELINES.get(action, 30)
     bundle = 1
     if context:
         bundle = int(context.get("bundle_size", 1)) or 1
-    seconds = int(base * bundle)
-    return max(seconds, 0)
+    return max(int(base * bundle), 0)
+
+
+def estimate_savings(action_kind: str, context: Mapping[str, Any] | None = None) -> int:
+    """Backward compatible wrapper for older callers."""
+
+    return estimate_seconds(action_kind, context)
 
 
 def _percentile(values: Sequence[float], percentile: float) -> float:

@@ -4,6 +4,10 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
+import hashlib
+import importlib
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -73,6 +77,7 @@ def orchestrator_test_app(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("JIRA_TOKEN", "unit-token")
     monkeypatch.setenv("WEBHOOK_SECRET", "unit-secret")
     monkeypatch.setenv("ORCH_SECRET", "unit-shared-secret")
+    monkeypatch.setenv("ORCHESTRATOR_TOKEN", "unit-orch-token")
     monkeypatch.setenv("ORCHESTRATOR_BASE_URL", "http://orchestrator:7010")
     monkeypatch.setenv("AUTO_REGISTER_WEBHOOK", "1")
     ledger_path = Path("artifacts/test-credit-ledger.jsonl")
@@ -88,13 +93,37 @@ def orchestrator_test_app(monkeypatch: pytest.MonkeyPatch):
     module.LEDGER.clear()
     module.SUGGESTIONS.clear()
     module.APPLY_RESULTS.clear()
+    module.APPLY_FINGERPRINTS.clear()
     with TestClient(module.app) as client:
         yield client, module, adapter
     module.adapter = original_adapter
     module.LEDGER.clear()
     module.SUGGESTIONS.clear()
     module.APPLY_RESULTS.clear()
+    module.APPLY_FINGERPRINTS.clear()
     module.credit.reset_ledger(ledger_path, truncate=True)
+
+
+def forge_headers(
+    secret: str,
+    body: bytes,
+    *,
+    idem: str | None = None,
+    actor: str | None = None,
+    display: str | None = None,
+) -> dict[str, str]:
+    signature = hashlib.sha256(secret.encode("utf-8") + body).hexdigest()
+    headers = {
+        "Authorization": "Bearer unit-orch-token",
+        "X-Forge-Signature": f"sha256={signature}",
+    }
+    if idem:
+        headers["Idempotency-Key"] = idem
+    if actor:
+        headers["X-DS-Actor"] = actor
+    if display:
+        headers["X-DS-Actor-Display"] = display
+    return headers
 
 
 def test_startup_registers_webhook(orchestrator_test_app):
@@ -112,10 +141,11 @@ def test_ingest_returns_proposals(orchestrator_test_app):
         "key": "SUP-1",
         "fields": {"summary": "Potrebujeme info", "labels": []},
     }
+    headers = forge_headers(module.FORGE_SHARED_SECRET, b"")
     response = client.get(
         "/v1/jira/ingest",
         params={"issueKey": "SUP-1"},
-        headers={"x-ds-secret": "unit-shared-secret"},
+        headers=headers,
     )
     assert response.status_code == 200
     payload = response.json()
@@ -155,76 +185,133 @@ def test_apply_executes_full_plan(orchestrator_test_app):
         "key": "SUP-3",
         "fields": {"summary": "Potrebujem podporu", "labels": []},
     }
+    ingest_headers = forge_headers(module.FORGE_SHARED_SECRET, b"")
     ingest_response = client.get(
         "/v1/jira/ingest",
         params={"issueKey": "SUP-3"},
-        headers={"x-ds-secret": "unit-shared-secret"},
+        headers=ingest_headers,
     )
     proposals = ingest_response.json()["proposals"]
     comment_action = next(p for p in proposals if p["kind"] == "comment")
     label_action = next(p for p in proposals if p["kind"] == "set-labels")
 
+    apply_payload = json.dumps({"issueKey": "SUP-3", "action": comment_action}).encode("utf-8")
+    apply_headers = forge_headers(
+        module.FORGE_SHARED_SECRET,
+        apply_payload,
+        idem=f"SUP-3:{comment_action['id']}",
+        actor="human.test-user",
+        display="Test User",
+    )
+    apply_headers["Content-Type"] = "application/json"
     apply_response = client.post(
         "/v1/jira/apply",
-        json={"issueKey": "SUP-3", "action": comment_action},
-        headers={
-            "x-ds-secret": "unit-shared-secret",
-            "Idempotency-Key": f"SUP-3:{comment_action['id']}",
-            "X-DS-Actor": "human.test-user",
-            "X-DS-Actor-Display": "Test User",
-        },
+        data=apply_payload,
+        headers=apply_headers,
     )
     assert apply_response.status_code == 200
     result = apply_response.json()
     assert result["ok"] is True
-    assert result["credit"]["secondsSaved"] > 0
-    assert result["credit"]["splits"]
+    assert result["result"]["status"] == "success"
+    assert result["credit"]["impact"]["secondsSaved"] > 0
+    assert result["credit"]["attributions"]
     assert adapter.comments and adapter.comments[0][0] == "SUP-3"
+    credit_event_id = result["credit"]["id"]
 
+    second_headers = forge_headers(
+        module.FORGE_SHARED_SECRET,
+        apply_payload,
+        idem=f"SUP-3:{comment_action['id']}",
+        actor="human.test-user",
+    )
+    second_headers["Content-Type"] = "application/json"
     second_call = client.post(
         "/v1/jira/apply",
-        json={"issueKey": "SUP-3", "action": comment_action},
-        headers={
-            "x-ds-secret": "unit-shared-secret",
-            "Idempotency-Key": f"SUP-3:{comment_action['id']}",
-            "X-DS-Actor": "human.test-user",
-        },
+        data=apply_payload,
+        headers=second_headers,
     )
     assert second_call.status_code == 200
+    assert second_call.json()["credit"]["id"] == credit_event_id
     assert len(adapter.comments) == 1
 
+    labels_payload = json.dumps({"issueKey": "SUP-3", "action": label_action}).encode("utf-8")
+    label_headers = forge_headers(
+        module.FORGE_SHARED_SECRET,
+        labels_payload,
+        idem=f"SUP-3:{label_action['id']}",
+        actor="human.test-user",
+    )
+    label_headers["Content-Type"] = "application/json"
     apply_labels = client.post(
         "/v1/jira/apply",
-        json={"issueKey": "SUP-3", "action": label_action},
-        headers={
-            "x-ds-secret": "unit-shared-secret",
-            "Idempotency-Key": f"SUP-3:{label_action['id']}",
-            "X-DS-Actor": "human.test-user",
-        },
+        data=labels_payload,
+        headers=label_headers,
     )
     assert apply_labels.status_code == 200
     assert adapter.updated_fields and adapter.updated_fields[0][1]["labels"]
     ledger_entry = module.LEDGER["SUP-3"]
     assert ledger_entry["total_credit_seconds"] > 0
+    credit_summary = result["credit"]
     issue_credit = client.get(
         "/v1/credit/issue/SUP-3",
-        headers={"x-ds-secret": "unit-shared-secret"},
+        headers=forge_headers(module.FORGE_SHARED_SECRET, b""),
     )
     assert issue_credit.status_code == 200
     issue_payload = issue_credit.json()
-    assert issue_payload["totalSecondsSaved"] >= result["credit"]["secondsSaved"]
+    assert issue_payload["total_seconds"] >= credit_summary["impact"]["secondsSaved"]
+    assert issue_payload["events"] and issue_payload["contributors"]
     chain_resp = client.get(
         "/v1/credit/chain",
         params={"limit": 5},
-        headers={"x-ds-secret": "unit-shared-secret"},
+        headers=forge_headers(module.FORGE_SHARED_SECRET, b""),
     )
     assert chain_resp.status_code == 200
     chain_events = chain_resp.json()
-    assert any(event["id"] == result["credit"]["eventId"] for event in chain_events)
+    assert any(event["id"] == credit_event_id for event in chain_events)
     agent_summary = client.get(
         "/v1/credit/agent/human.test-user",
-        headers={"x-ds-secret": "unit-shared-secret"},
+        headers=forge_headers(module.FORGE_SHARED_SECRET, b""),
     )
     assert agent_summary.status_code == 200
     agent_payload = agent_summary.json()
-    assert agent_payload["totalSecondsSaved"] > 0
+    assert agent_payload["total_seconds"] > 0
+
+
+def test_agents_top_endpoint(orchestrator_test_app):
+    client, module, adapter = orchestrator_test_app
+    adapter.issue_payloads["SUP-4"] = {
+        "key": "SUP-4",
+        "fields": {"summary": "Potrebujeme prioritu", "labels": ["priority:medium"]},
+    }
+    ingest_headers = forge_headers(module.FORGE_SHARED_SECRET, b"")
+    ingest_response = client.get(
+        "/v1/jira/ingest",
+        params={"issueKey": "SUP-4"},
+        headers=ingest_headers,
+    )
+    proposals = ingest_response.json()["proposals"]
+    comment_action = next(p for p in proposals if p["kind"] == "comment")
+    apply_payload = json.dumps({"issueKey": "SUP-4", "action": comment_action}).encode("utf-8")
+    apply_headers = forge_headers(
+        module.FORGE_SHARED_SECRET,
+        apply_payload,
+        idem="SUP-4:comment",
+        actor="human.test-user",
+    )
+    apply_headers["Content-Type"] = "application/json"
+    apply_response = client.post(
+        "/v1/jira/apply",
+        data=apply_payload,
+        headers=apply_headers,
+    )
+    assert apply_response.status_code == 200
+
+    top_resp = client.get(
+        "/v1/agents/top",
+        params={"window": "30d"},
+        headers=forge_headers(module.FORGE_SHARED_SECRET, b""),
+    )
+    assert top_resp.status_code == 200
+    body = top_resp.json()
+    assert body["window_days"] == 30
+    assert body["contributors"], "expected at least one contributor"
