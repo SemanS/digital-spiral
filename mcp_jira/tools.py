@@ -9,6 +9,7 @@ from clients.python.jira_adapter import JiraAdapter
 
 __all__ = [
     "ADAPTER",
+    "refresh_adapter",
     "t_jira_create_issue",
     "t_jira_get_issue",
     "t_jira_search",
@@ -30,6 +31,14 @@ def _build_adapter() -> JiraAdapter:
 
 
 ADAPTER = _build_adapter()
+
+
+def refresh_adapter() -> JiraAdapter:
+    """Rebuild the global adapter after environment changes."""
+
+    global ADAPTER
+    ADAPTER = _build_adapter()
+    return ADAPTER
 
 
 def t_jira_create_issue(args: Dict[str, Any]) -> Dict[str, Any]:

@@ -13,6 +13,7 @@ COPY pyproject.toml ./
 COPY mockjira ./mockjira
 COPY clients ./clients
 COPY examples ./examples
+COPY mcp_jira ./mcp_jira
 COPY scripts ./scripts
 COPY requirements-contract.txt ./requirements-contract.txt
 

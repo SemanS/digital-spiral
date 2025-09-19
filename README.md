@@ -74,6 +74,74 @@ python scripts/generate_dummy_jira.py --config scripts/seed_profiles/default.jso
 Authenticated requests must include `Authorization: Bearer mock-token` unless
 you customise the store.
 
+### MCP Jira bridge
+
+Run the lightweight HTTP bridge and point your MCP-enabled client at it. The
+bridge supports two authentication modes:
+
+1. **Static bearer token / PAT** – quickest for local testing.
+
+   ```bash
+   export JIRA_BASE_URL="https://dotxan-team-ttygqm7b.atlassian.net"
+   export JIRA_TOKEN="<your_jira_pat>"
+   python -m mcp_jira.http_server --port 8055
+   ```
+
+2. **OAuth 2.0 (3LO)** – no static token; the bridge walks you through browser
+   consent and persists refresh tokens under `~/.config/mcp-jira/token.json`.
+   Provide the Atlassian app credentials before launch:
+
+   ```bash
+   export ATLASSIAN_CLIENT_ID="<client_id>"
+   export ATLASSIAN_CLIENT_SECRET="<client_secret>"
+   export ATLASSIAN_REDIRECT_URI="http://127.0.0.1:8055/oauth/callback"
+   python -m mcp_jira.http_server --port 8055
+   ```
+
+   The server prints an authorization URL. Open it in your browser, approve the
+   access request, and you are ready to use MCP tools. Access/refresh tokens are
+   refreshed automatically when they expire.
+
+The bridge exposes `/tools` and `/tools/invoke` endpoints compatible with
+`mcp-remote`. Configure your CLI by adding:
+
+```toml
+[mcp_servers.jira]
+command = "python"
+args = ["-m", "mcp_jira.http_server", "--host", "127.0.0.1", "--port", "8055"]
+startup_timeout_ms = 20_000
+env = {
+  ATLASSIAN_CLIENT_ID = "<client_id>",
+  ATLASSIAN_CLIENT_SECRET = "<client_secret>",
+  ATLASSIAN_REDIRECT_URI = "http://127.0.0.1:8055/oauth/callback",
+  ATLASSIAN_SCOPES = "offline_access read:jira-user read:jira-work write:jira-work manage:jira-project",
+  PYTHONPATH = "/absolute/path/to/digital-spiral"
+}
+```
+
+For a smoother experience you can launch everything through the helper script
+which starts the bridge, opens the authorization URL (where supported), and
+executes a smoke query once authentication succeeds:
+
+```bash
+python scripts/run_mcp_jira_oauth.py --open --test
+```
+
+The script keeps the bridge running until you press `Ctrl+C`.
+
+If you prefer PATs, replace the env block with `JIRA_BASE_URL` and
+`JIRA_TOKEN` instead. Never commit production credentials; keep them local to
+your machine or a secure secret store.
+
+To inject one of the seed profiles into a live Jira tenant once the bridge is
+running, use the loader utility:
+
+```bash
+python scripts/load_seed_jira.py artifacts/docker_manual_seed.json
+```
+
+Pass `--project SRC=DST` to remap project keys when necessary.
+
 ### Useful endpoints
 
 - `GET /rest/api/3/project` — list seeded projects.

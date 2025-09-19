@@ -26,5 +26,5 @@ test = [
 [project.scripts]
 mock-jira-server = "mockjira.main:run"
 
-[tool.setuptools]
-packages = ["mockjira", "clients", "mcp_jira", "examples"]
+[tool.setuptools.packages.find]
+include = ["mockjira*", "clients*", "mcp_jira*", "examples*"]
