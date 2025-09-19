@@ -85,5 +85,28 @@ def test_apply_creates_credit_event(monkeypatch, tmp_path: Path, live_server: st
         assert summary.get("total_seconds") >= credit_block["impact"]["secondsSaved"]
         assert summary.get("events"), "expected recent events recorded"
 
+        top_resp = client.get(
+            "/v1/credit/agents/top?window=30d", headers=_auth_headers(secret, b"")
+        )
+        assert top_resp.status_code == 200
+        top_agents = top_resp.json()
+        assert isinstance(top_agents, list)
+        assert any(item.get("agent_id") for item in top_agents)
+
+        seconds_resp = client.get(
+            "/v1/metrics/seconds-saved?window=7d", headers=_auth_headers(secret, b"")
+        )
+        assert seconds_resp.status_code == 200
+        seconds_payload = seconds_resp.json()
+        assert seconds_payload.get("windowDays") == 7
+
+        throughput_resp = client.get(
+            "/v1/metrics/throughput?window=7d", headers=_auth_headers(secret, b"")
+        )
+        assert throughput_resp.status_code == 200
+        throughput_payload = throughput_resp.json()
+        assert throughput_payload.get("windowDays") == 7
+        assert throughput_payload.get("count") >= 1
+
     ledger_contents = ledger_path.read_text(encoding="utf-8").strip().splitlines()
     assert ledger_contents, "ledger should contain at least one event"

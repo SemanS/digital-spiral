@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from __future__ import annotations
+
 import hashlib
 import json
 import math
@@ -291,6 +293,16 @@ def _aggregate_contributors(events: Iterable[CreditEvent]) -> Dict[str, Dict[str
     return totals
 
 
+def _events_within_window(window_days: int, *, now: Optional[datetime] = None) -> List[CreditEvent]:
+    if window_days <= 0:
+        return []
+    snapshot = list(_LEDGER)
+    if not snapshot:
+        return []
+    pivot = (now or datetime.now(UTC)) - timedelta(days=window_days)
+    return [event for event in snapshot if event.ts >= pivot]
+
+
 def issue_summary(issue_key: str, since: Optional[datetime] = None, limit: int = 5) -> IssueCreditSummary:
     events = list(_INDEX_BY_ISSUE.get(issue_key, []))
     total_seconds = sum(event.impact.secondsSaved for event in events)
@@ -394,6 +406,34 @@ def all_events() -> List[CreditEvent]:
     """Return a snapshot copy of all credit events."""
 
     return list(_LEDGER)
+
+
+def events_for_issue(issue_key: str) -> List[CreditEvent]:
+    """Return all recorded events for an issue key."""
+
+    return list(_INDEX_BY_ISSUE.get(issue_key, []))
+
+
+def top_agents(window_days: int, *, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Return aggregate contribution per agent for the given window."""
+
+    if window_days <= 0:
+        return []
+    events = _events_within_window(window_days)
+    totals = _aggregate_contributors(events)
+    ordered = sorted(totals.items(), key=lambda item: item[1]["seconds"], reverse=True)
+    payload: List[Dict[str, Any]] = []
+    for agent_id, bucket in ordered:
+        payload.append(
+            {
+                "agent_id": agent_id,
+                "seconds": float(bucket["seconds"]),
+                "events": int(bucket["events"]),
+            }
+        )
+    if limit is not None and limit >= 0:
+        return payload[:limit]
+    return payload
 
 
 def rollup_for_issue(issue_key: str, since: Optional[datetime] = None, limit: int = 5) -> IssueCreditSummary:

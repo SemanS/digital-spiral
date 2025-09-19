@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 import json
 import os
 import statistics
@@ -60,23 +58,38 @@ def _window_events(days: int, now: datetime | None = None) -> list[int]:
     return values
 
 
+def seconds_saved_window(window_days: int) -> dict[str, Any]:
+    """Return descriptive statistics for a rolling window."""
+
+    if window_days <= 0:
+        return {
+            "windowDays": window_days,
+            "count": 0,
+            "totalSeconds": 0.0,
+            "avgSeconds": 0.0,
+            "p50Seconds": 0.0,
+            "p90Seconds": 0.0,
+        }
+    values = sorted(_window_events(window_days))
+    total = float(sum(values))
+    count = len(values)
+    avg = float(total / count) if count else 0.0
+    return {
+        "windowDays": window_days,
+        "count": count,
+        "totalSeconds": total,
+        "avgSeconds": avg,
+        "p50Seconds": float(_percentile(values, 0.5)),
+        "p90Seconds": float(_percentile(values, 0.9)),
+    }
+
+
 def seconds_saved_summary(windows: Iterable[int] = (7, 30)) -> dict[str, Any]:
     """Return summary statistics for the provided windows (in days)."""
 
     summaries: dict[str, Any] = {}
     for window in windows:
-        values = sorted(_window_events(window))
-        total = float(sum(values))
-        count = len(values)
-        mean = float(statistics.mean(values)) if values else 0.0
-        summaries[f"{window}d"] = {
-            "windowDays": window,
-            "count": count,
-            "totalSeconds": total,
-            "meanSeconds": mean,
-            "p50Seconds": float(_percentile(values, 0.5)),
-            "p90Seconds": float(_percentile(values, 0.9)),
-        }
+        summaries[f"{window}d"] = seconds_saved_window(window)
     return {"windows": summaries}
 
 
@@ -222,3 +235,22 @@ def top_contributors(window_days: int = 30) -> list[dict[str, Any]]:
         }
         for contributor in summary.topContributors
     ]
+
+
+def throughput(window_days: int = 7, now: datetime | None = None) -> dict[str, Any]:
+    """Return apply throughput metrics for the specified window."""
+
+    if window_days <= 0:
+        return {"windowDays": window_days, "count": 0, "appliesPerDay": 0.0}
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(days=window_days)
+    from . import credit
+
+    apply_events = [
+        event
+        for event in credit.all_events()
+        if event.ts >= cutoff and str(event.action or "").startswith("apply")
+    ]
+    count = len(apply_events)
+    per_day = float(count) / float(window_days) if window_days else 0.0
+    return {"windowDays": window_days, "count": count, "appliesPerDay": per_day}
