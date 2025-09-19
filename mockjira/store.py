@@ -907,7 +907,7 @@ class InMemoryStore:
         if updated_gte:
             threshold = self._parse_datetime(updated_gte)
             if threshold:
-                results = [issue for issue in results if issue.updated >= threshold]
+                results = [issue for issue in results if issue.updated > threshold]
 
         created_filter = date_filters.get("created") or {}
         created_gte = created_filter.get("gte") if isinstance(created_filter, dict) else None
@@ -1155,14 +1155,12 @@ class InMemoryStore:
     def dispatch_event(self, event_type: str, payload: dict[str, Any]) -> None:
         event_id = str(uuid.uuid4())
         now = datetime.now(UTC)
-        self.deliveries.append(
-            {
-                "event": event_type,
-                "eventId": event_id,
-                "payload": payload,
-                "timestamp": now.isoformat(),
-            }
-        )
+        event_record = {
+            "event": event_type,
+            "eventId": event_id,
+            "payload": payload,
+            "timestamp": now.isoformat(),
+        }
         for registration in self.webhooks.values():
             if not registration.active or event_type not in registration.events:
                 continue
@@ -1191,6 +1189,7 @@ class InMemoryStore:
                 record=record,
                 force=False,
             )
+        self.deliveries.append(event_record)
 
     def _remember_delivery_key(self, key: tuple[str, str]) -> None:
         self._recent_delivery_keys.append(key)
@@ -1211,6 +1210,22 @@ class InMemoryStore:
         record: dict[str, Any],
         force: bool,
     ) -> None:
+        body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+        record["wireBody"] = base64.b64encode(body).decode()
+        headers = {
+            "Content-Type": "application/json",
+            "X-MockJira-Event-Id": event_id,
+            "X-MockJira-Event-Type": event_type.split(":", 1)[-1],
+        }
+        if secret:
+            digest = hashlib.sha256(secret.encode() + body).hexdigest()
+            headers["X-MockJira-Signature"] = f"sha256={digest}"
+            headers["X-MockJira-Signature-Version"] = "2"
+            if self._legacy_signature_compat:
+                legacy = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+                headers["X-MockJira-Legacy-Signature"] = f"sha256={legacy}"
+        record["headers"] = headers.copy()
+
         meta = {
             "delivery_id": delivery_id,
             "event": event_type,
@@ -1219,6 +1234,8 @@ class InMemoryStore:
             "secret": secret,
             "payload": payload,
             "record": record,
+            "body": body,
+            "headers": headers,
             "force": force,
         }
         self._delivery_index[delivery_id] = meta
@@ -1259,27 +1276,11 @@ class InMemoryStore:
         if not url:
             record["status"] = "skipped"
             return
-        payload = meta["payload"]
-        secret = meta["secret"]
-        event_type = meta["event"]
         event_id = meta["event_id"]
         jitter = random.uniform(*self._webhook_jitter_ms) / 1000
         await asyncio.sleep(jitter)
-        body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
-        record["wireBody"] = base64.b64encode(body).decode()
-        headers = {
-            "Content-Type": "application/json",
-            "X-MockJira-Event-Id": event_id,
-            "X-MockJira-Event-Type": event_type.split(":", 1)[-1],
-        }
-        if secret:
-            digest = hashlib.sha256(secret.encode() + body).hexdigest()
-            headers["X-MockJira-Signature"] = f"sha256={digest}"
-            headers["X-MockJira-Signature-Version"] = "2"
-            if self._legacy_signature_compat:
-                legacy = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-                headers["X-MockJira-Legacy-Signature"] = f"sha256={legacy}"
-        record["headers"] = headers.copy()
+        body = meta["body"]
+        headers = meta["headers"]
 
         delays = [0.5, 1.0, 2.0]
         attempts = 0

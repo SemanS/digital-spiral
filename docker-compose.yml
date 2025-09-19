@@ -28,7 +28,7 @@ services:
     environment:
       JIRA_BASE_URL: http://mock-jira:9000
       JIRA_TOKEN: ${JIRA_TOKEN:-mock-token}
-      MOCK_JIRA_SEED_CONFIG: ${MOCK_JIRA_SEED_CONFIG:-scripts/seed_profiles/default.json}
+      MOCK_JIRA_SEED_CONFIG: ${MOCK_JIRA_SEED_CONFIG:-scripts/seed_profiles/forge_demo.json}
     command: ["python", "scripts/bootstrap_mockjira.py"]
     restart: "no"
 

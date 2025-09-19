@@ -126,7 +126,7 @@ def _seed_projects(store: InMemoryStore, cfg: GenConfig) -> None:
             lead_account_id=lead_dev,
         )
     for idx in range(cfg.servicedesk_projects):
-        key = "SUP" if cfg.servicedesk_projects == 1 else f"SUP{idx + 1}"
+        key = f"SUP{idx + 1}"
         store.projects[key] = Project(
             id=str(11000 + idx),
             key=key,

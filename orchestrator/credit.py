@@ -320,6 +320,31 @@ def credit_chain(limit: int = 100) -> List[CreditEvent]:
     return list(reversed(_LEDGER[-limit:]))
 
 
+def all_events() -> List[CreditEvent]:
+    """Return a snapshot copy of all credit events."""
+
+    return list(_LEDGER)
+
+
+def rollup_for_issue(issue_key: str, since: Optional[datetime] = None, limit: int = 5) -> IssueCreditSummary:
+    """Alias for :func:`issue_summary` to match orchestration terminology."""
+
+    return issue_summary(issue_key, since=since, limit=limit)
+
+
+def rollup_for_agent(agent_id: str, since: Optional[datetime] = None, limit: int = 20) -> AgentCreditSummary:
+    """Alias for :func:`agent_summary` used by API endpoints."""
+
+    return agent_summary(agent_id, since=since, limit=limit)
+
+
+def ewma_score(agent_id: str, now: Optional[datetime] = None) -> float:
+    """Expose the exponentially weighted moving average score for an agent."""
+
+    events = _INDEX_BY_ACTOR.get(agent_id, [])
+    return _decayed_score(events, agent_id, now=now)
+
+
 def build_apply_event(
     issue_key: str,
     proposal: Mapping[str, Any],

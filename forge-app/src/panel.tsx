@@ -9,12 +9,14 @@ import {
   ButtonSet,
   render,
 } from '@forge/ui';
+import { view } from '@forge/bridge';
 import { getProjectConfig, type ProjectConfig } from './lib/config';
 import {
   applyAction,
   fetchIssueCredit,
   fetchProposals,
   type CreditInfo,
+  type CreditSplit,
   type ApplyResponse,
   type IngestResponse,
   type IssueCredit,
@@ -119,19 +121,9 @@ function describeCredit(credit: CreditInfo | null | undefined, actorId?: string 
     return '';
   }
   const seconds = Math.round(credit.secondsSaved);
-  const parts: string[] = [`−${seconds}s credited`];
-  if (credit.splits && credit.splits.length > 0) {
-    const splits = credit.splits
-      .map((split) => {
-        const shareSeconds = Math.round(seconds * split.weight);
-        return `${participantLabel(split.id, actorId)} ${shareSeconds}s`;
-      })
-      .join(', ');
-    if (splits) {
-      parts.push(`(${splits})`);
-    }
-  }
-  return parts.join(' ');
+  const detail = formatEventSplits(credit.splits, actorId, seconds);
+  const base = `−${seconds}s credited`;
+  return detail ? `${base} (${detail})` : base;
 }
 
 function formatSplitPercent(weight: number): string {
@@ -139,14 +131,22 @@ function formatSplitPercent(weight: number): string {
 }
 
 function formatEventSplits(
-  credit: CreditInfo | null | undefined,
+  splits: CreditSplit[] | undefined,
   actorId?: string | null,
+  totalSeconds?: number,
 ): string {
-  if (!credit?.splits || credit.splits.length === 0) {
+  if (!splits || splits.length === 0) {
     return '';
   }
-  return credit.splits
-    .map((split) => `${participantLabel(split.id, actorId)} ${formatSplitPercent(split.weight)}`)
+  return splits
+    .map((split) => {
+      const label = participantLabel(split.id, actorId);
+      if (typeof totalSeconds === 'number') {
+        const shareSeconds = Math.round(totalSeconds * split.weight);
+        return `${label} ${shareSeconds}s`;
+      }
+      return `${label} ${formatSplitPercent(split.weight)}`;
+    })
     .join(', ');
 }
 
@@ -155,6 +155,66 @@ function formatSavedSeconds(value?: number | null): string {
     return '0';
   }
   return `−${Math.round(value)}`;
+}
+
+const MAX_RECENT_EVENTS = 5;
+
+type ContributorsCardProps = {
+  credit: IssueCredit | null;
+  actorId?: string | null;
+};
+
+function ContributorsCard({ credit, actorId }: ContributorsCardProps) {
+  if (!credit) {
+    return null;
+  }
+  const totalSaved = `${formatSavedSeconds(credit.totalSecondsSaved)} s`;
+  const sprintSaved =
+    credit.windowSecondsSaved !== undefined && credit.windowSecondsSaved !== null
+      ? `${formatSavedSeconds(credit.windowSecondsSaved)} s`
+      : null;
+
+  return (
+    <SectionMessage appearance="information" title={`Contributors • Saved: ${totalSaved}`}>
+      {sprintSaved ? (
+        <Text>
+          Sprint window: <Strong>{sprintSaved}</Strong>
+        </Text>
+      ) : null}
+      {credit.contributors.length ? (
+        credit.contributors.slice(0, 5).map((contributor) => (
+          <Text key={contributor.id}>
+            <Strong>{participantLabel(contributor.id, actorId)}</Strong> ·{' '}
+            {`${formatSavedSeconds(contributor.secondsSaved)} s`} ({
+              Math.round(contributor.share * 100)
+            }%)
+          </Text>
+        ))
+      ) : (
+        <Text>No contributors yet.</Text>
+      )}
+      {credit.recentEvents.length ? (
+        <>
+          <Text>
+            <Strong>Recent events</Strong>
+          </Text>
+          {credit.recentEvents.slice(0, MAX_RECENT_EVENTS).map((event) => {
+            const actorLabel = participantLabel(event.actor?.id || event.actor?.type || '', actorId);
+            const seconds = event.impact?.secondsSaved;
+            const splits = formatEventSplits(event.attribution?.split, actorId, seconds);
+            return (
+              <Text key={event.id}>
+                {event.ts} · <Strong>{event.action}</Strong> · {actorLabel} ·{' '}
+                {seconds !== undefined && seconds !== null ? `${formatSavedSeconds(seconds)} s` : '0 s'}
+                {splits ? ` • ${splits}` : ''}
+                {event.attribution?.reason ? ` • ${event.attribution.reason}` : ''}
+              </Text>
+            );
+          })}
+        </>
+      ) : null}
+    </SectionMessage>
+  );
 }
 
 const Panel = () => {
@@ -255,6 +315,17 @@ const Panel = () => {
     setState({ ...state, applyingId: proposal.id });
     try {
       const result = await applyAction(state.cfg, state.issueKey, proposal, actorOptions);
+      const toastActor = state.actorHeader ?? actorOptions?.actorId ?? null;
+      const toastDescription = describeCredit(result.credit, toastActor);
+      try {
+        await view.showToast({
+          variant: 'success',
+          title: 'Applied',
+          description: toastDescription ? `Applied • ${toastDescription}` : 'Action applied successfully.',
+        });
+      } catch (toastError) {
+        // Ignore toast failures in demo mode
+      }
       const creditPromise = fetchIssueCredit(state.cfg, state.issueKey, {
         ...(actorOptions || {}),
         since,
@@ -305,52 +376,13 @@ const Panel = () => {
     );
   }
 
-  const appliedCredit = state.status === 'ready'
-    ? describeCredit(state.lastResult?.credit, state.actorHeader)
-    : '';
+  const appliedCredit =
+    state.status === 'ready' ? describeCredit(state.lastResult?.credit, state.actorHeader) : '';
   const issueCredit = state.status === 'ready' ? state.credit : null;
 
   return (
     <IssuePanel>
-      {issueCredit ? (
-        <SectionMessage appearance="information" title="Saved time">
-          <Text>
-            Saved this issue: <Strong>{formatSavedSeconds(issueCredit.totalSecondsSaved)}</Strong> seconds.
-          </Text>
-          {issueCredit.windowSecondsSaved !== undefined && issueCredit.windowSecondsSaved !== null ? (
-            <Text>
-              Saved this sprint:{' '}
-              <Strong>{formatSavedSeconds(issueCredit.windowSecondsSaved)}</Strong> seconds.
-            </Text>
-          ) : null}
-        </SectionMessage>
-      ) : null}
-      {issueCredit?.contributors?.length ? (
-        <SectionMessage appearance="information" title="Contributors">
-          {issueCredit.contributors.slice(0, 5).map((contributor) => (
-            <Text key={contributor.id}>
-              <Strong>{participantLabel(contributor.id, state.actorHeader)}</Strong> ·{' '}
-              {formatSavedSeconds(contributor.secondsSaved)}s ({Math.round(contributor.share * 100)}%)
-            </Text>
-          ))}
-        </SectionMessage>
-      ) : null}
-      {issueCredit?.recentEvents?.length ? (
-        <SectionMessage appearance="information" title="Recent credit events">
-          {issueCredit.recentEvents.slice(0, 5).map((event) => {
-            const splits = formatEventSplits({ splits: event.attribution?.split || [] }, state.actorHeader);
-            const actorLabel = participantLabel(event.actor?.id || event.actor?.type || '', state.actorHeader);
-            return (
-              <Text key={event.id}>
-                {event.ts} · <Strong>{event.action}</Strong> · {actorLabel} ·{' '}
-                {formatSavedSeconds(event.impact?.secondsSaved)}s
-                {splits ? ` • ${splits}` : ''}
-                {event.attribution?.reason ? ` • ${event.attribution.reason}` : ''}
-              </Text>
-            );
-          })}
-        </SectionMessage>
-      ) : null}
+      <ContributorsCard credit={issueCredit} actorId={state.status === 'ready' ? state.actorHeader : null} />
       {state.ledgerHint?.seconds ? (
         <SectionMessage appearance="information" title="Estimated savings">
           <Text>
