@@ -110,8 +110,20 @@ def _build_throughput_section(stats: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+def _parse_window_arg(raw: str) -> int:
+    value = (raw or "").strip().lower()
+    if value.endswith("d"):
+        value = value[:-1]
+    return int(value)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Generate credit value report")
+    parser.add_argument(
+        "--tenant",
+        required=True,
+        help="Tenant identifier to query",
+    )
     parser.add_argument(
         "--out",
         default="artifacts/credit_report.md",
@@ -119,17 +131,20 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--window",
-        type=int,
-        default=30,
-        help="Rolling window (days) for the top contributors section",
+        default="30d",
+        help="Rolling window (days) for the top contributors section (e.g. 14d)",
     )
     args = parser.parse_args(argv)
 
-    window_days = sorted({7, 30, args.window})
-    window_stats = {days: metrics_module.seconds_saved_window(days) for days in window_days}
-    baseline = metrics_module.ttr_frt_baseline()
-    contributors = metrics_module.top_contributors(window_days=args.window)
-    throughput_stats = metrics_module.throughput(window_days=7)
+    tenant = args.tenant
+    contributor_window = _parse_window_arg(args.window)
+    window_days = sorted({7, 30, contributor_window})
+    window_stats = {
+        days: metrics_module.seconds_saved_window(tenant, days) for days in window_days
+    }
+    baseline = metrics_module.ttr_frt_baseline(tenant)
+    contributors = metrics_module.top_contributors(tenant, window_days=contributor_window)
+    throughput_stats = metrics_module.throughput(tenant, window_days=7)
 
     report_lines = ["# Credit value report", ""]
     report_lines.append(_build_seconds_section(window_stats))

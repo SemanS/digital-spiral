@@ -159,6 +159,18 @@ def test_ingest_returns_proposals(orchestrator_test_app):
     assert payload["estimated_savings"]["seconds"] == expected_total
 
 
+def test_ingest_rejects_invalid_signature(orchestrator_test_app):
+    client, module, _ = orchestrator_test_app
+    headers = forge_headers(module.FORGE_SHARED_SECRET, b"")
+    headers["X-Forge-Signature"] = "sha256=deadbeef"
+    response = client.get(
+        "/v1/jira/ingest",
+        params={"issueKey": "SUP-unauthorized"},
+        headers=headers,
+    )
+    assert response.status_code == 401
+
+
 def test_webhook_triggers_auto_ingest(orchestrator_test_app):
     client, module, adapter = orchestrator_test_app
     adapter.issue_payloads["SUP-2"] = {"key": "SUP-2", "fields": {"summary": "Login nejde", "labels": []}}

@@ -1,5 +1,21 @@
 version: "3.9"
 services:
+  postgres:
+    image: postgres:15
+    container_name: ds-postgres
+    environment:
+      POSTGRES_USER: ds
+      POSTGRES_PASSWORD: ds
+      POSTGRES_DB: ds_orchestrator
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ds -d ds_orchestrator"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   mock-jira:
     build: .
     image: digital-spiral/mock-jira:dev
@@ -18,6 +34,9 @@ services:
       interval: 10s
       timeout: 3s
       retries: 6
+
+volumes:
+  pgdata:
 
   mock-jira-seed:
     image: digital-spiral/mock-jira:dev
@@ -45,11 +64,15 @@ services:
       - JIRA_BASE_URL=http://mock-jira:9000
       - JIRA_TOKEN=mock-token
       - WEBHOOK_SECRET=dev-secret
-      - ORCH_SECRET=forge-dev-secret
-      - LEDGER_BACKEND=memory
-      - SIGNATURE_VERSION=2
+      - FORGE_SHARED_SECRET=${DEFAULT_TENANT_SECRET:-forge-dev-secret}
+      - DEFAULT_TENANT_ID=${DEFAULT_TENANT_ID:-demo}
+      - DEFAULT_TENANT_SITE_ID=${DEFAULT_TENANT_SITE_ID:-demo.atlassian.net}
+      - DEFAULT_TENANT_SECRET=${DEFAULT_TENANT_SECRET:-forge-dev-secret}
+      - DATABASE_URL=postgresql+psycopg://ds:ds@postgres:5432/ds_orchestrator
       - ORCHESTRATOR_BASE_URL=http://orchestrator:7010
     depends_on:
+      postgres:
+        condition: service_healthy
       mock-jira:
         condition: service_healthy
       mock-jira-seed:
