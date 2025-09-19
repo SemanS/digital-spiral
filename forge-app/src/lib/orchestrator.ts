@@ -1,65 +1,94 @@
 import { fetch } from '@forge/api';
-import * as crypto from 'crypto';
 import type { ProjectConfig } from './config';
 
-export function signBody(secret: string, body: string) {
-  const hash = crypto.createHash('sha256');
-  hash.update(secret + body, 'utf8');
-  return `sha256=${hash.digest('hex')}`;
-}
+export type EstimatedSavings = {
+  seconds?: number;
+};
+
+export type Proposal = {
+  id: string;
+  kind: 'comment' | 'transition' | 'set-labels' | 'link';
+  explain?: string;
+  body_adf?: any;
+  transitionId?: string;
+  transitionName?: string;
+  labels?: string[];
+  mode?: string;
+  url?: string;
+  title?: string;
+};
+
+export type IngestResponse = {
+  issueKey: string;
+  proposals: Proposal[];
+  estimated_savings?: EstimatedSavings;
+};
+
+export type ApplyResponse = {
+  ok: boolean;
+  applied?: { id: string; kind?: string };
+  credit?: EstimatedSavings;
+  ledger?: Record<string, any>;
+  error?: string;
+};
 
 function normalizeBaseUrl(url: string) {
   return url.replace(/\/$/, '');
 }
 
-export async function getSuggestions(cfg: ProjectConfig, issueKey: string) {
-  const url = `${normalizeBaseUrl(cfg.orchestratorUrl)}/suggestions/${issueKey}`;
-  const res = await fetch(url, { method: 'GET' });
-  if (!res.ok) {
-    return null;
+function buildAuthHeaders(cfg: ProjectConfig) {
+  const headers: Record<string, string> = {
+    'X-DS-Secret': cfg.secret,
+  };
+  if (cfg.tenantId) {
+    headers['X-DS-Tenant'] = cfg.tenantId;
   }
-  return res.json();
+  return headers;
 }
 
-export async function ingest(cfg: ProjectConfig, snapshot: any) {
-  const url = `${normalizeBaseUrl(cfg.orchestratorUrl)}/ingest`;
-  const body = JSON.stringify({ issue: snapshot });
+async function raiseForResponseError(res: any, context: string): Promise<never> {
+  let message = `${context} failed: ${res.status}`;
+  try {
+    const text = await res.text();
+    if (text) {
+      message += ` – ${text}`;
+    }
+  } catch (err) {
+    // ignore parsing error
+  }
+  throw new Error(message);
+}
+
+export async function fetchProposals(cfg: ProjectConfig, issueKey: string): Promise<IngestResponse> {
+  const url = `${normalizeBaseUrl(cfg.orchestratorUrl)}/v1/jira/ingest?issueKey=${encodeURIComponent(issueKey)}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: buildAuthHeaders(cfg),
+  });
+
+  if (!res.ok) {
+    await raiseForResponseError(res, 'ingest');
+  }
+
+  return (await res.json()) as IngestResponse;
+}
+
+export async function applyAction(cfg: ProjectConfig, issueKey: string, action: Proposal): Promise<ApplyResponse> {
+  const url = `${normalizeBaseUrl(cfg.orchestratorUrl)}/v1/jira/apply`;
+  const idemKey = `${issueKey}:${action.id}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-DS-Signature': signBody(cfg.secret, body),
+      'Idempotency-Key': idemKey,
+      ...buildAuthHeaders(cfg),
     },
-    body,
+    body: JSON.stringify({ issueKey, action }),
   });
 
   if (!res.ok) {
-    throw new Error(`ingest failed: ${res.status}`);
+    await raiseForResponseError(res, 'apply');
   }
 
-  return res.json();
-}
-
-export async function applyPlan(cfg: ProjectConfig, input: {
-  issueKey: string;
-  accepted_action_ids: string[];
-  draft_reply_adf: any;
-  playbook_id?: string;
-}) {
-  const url = `${normalizeBaseUrl(cfg.orchestratorUrl)}/apply`;
-  const body = JSON.stringify(input);
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-DS-Signature': signBody(cfg.secret, body),
-    },
-    body,
-  });
-
-  if (!res.ok) {
-    throw new Error(`apply failed: ${res.status}`);
-  }
-
-  return res.json();
+  return (await res.json()) as ApplyResponse;
 }
