@@ -1,4 +1,19 @@
 {
-  "description": "Forge demo dataset with one software project, support queue and rich sprint history for Digital Spiral walkthroughs.",
-  "seed_file": "artifacts/forge_demo_seed.json"
+  "description": "Deterministic Forge demo dataset with rich sprint history, seeded handoffs and realistic backlog aging for Digital Spiral walkthroughs.",
+  "generator": {
+    "seed": 314159,
+    "days": 180,
+    "software_projects": 1,
+    "servicedesk_projects": 1,
+    "issues_per_project": 140,
+    "boards_per_sw_project": 1,
+    "sprints_per_board": 8,
+    "sprint_length_days": 14,
+    "comments_per_issue_avg": 22.0,
+    "transition_rate": 0.82,
+    "link_probability": 0.2,
+    "assignee_churn_prob": 0.28
+  },
+  "handoff_probability": 0.2,
+  "notes": "Run: python scripts/generate_dummy_jira.py --config scripts/seed_profiles/forge_demo.json --out artifacts/forge_demo_seed.json --credit-ledger artifacts/credit-ledger.jsonl"
 }

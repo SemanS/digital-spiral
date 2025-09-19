@@ -4,6 +4,7 @@ export type ProjectConfig = {
   orchestratorUrl: string;
   secret: string;
   tenantId?: string;
+  token?: string;
 };
 
 const configKey = (projectKey: string) => `ds/config/${projectKey}`;
@@ -11,6 +12,7 @@ const configKey = (projectKey: string) => `ds/config/${projectKey}`;
 function configFromEnv(): ProjectConfig | null {
   const url = process.env.ORCH_URL;
   const secret = process.env.ORCH_SECRET;
+  const token = process.env.ORCH_TOKEN;
   if (!url || !secret) {
     return null;
   }
@@ -19,6 +21,7 @@ function configFromEnv(): ProjectConfig | null {
     orchestratorUrl: url,
     secret,
     tenantId: tenantId || undefined,
+    token: token || undefined,
   };
 }
 

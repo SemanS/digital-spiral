@@ -61,6 +61,10 @@ def _load_config(path: str | None) -> tuple[dict[str, object] | None, dict[str, 
         for key in known_fields
         if key in generator_cfg
     }
+    if "handoff_probability" in data:
+        cfg_kwargs["handoff_probability"] = data["handoff_probability"]
+    if "handoff_probability" in generator_cfg:
+        cfg_kwargs["handoff_probability"] = generator_cfg["handoff_probability"]
     return None, cfg_kwargs
 
 
@@ -288,6 +292,161 @@ def _inject_handoff_threads(payload: dict[str, Any], probability: float, rng: ra
         partner["updated"] = comment_time.isoformat()
 
 
+_PRIORITY_LABELS = [
+    "priority:highest",
+    "priority:high",
+    "priority:medium",
+    "priority:low",
+]
+
+
+def _strip_priority(labels: list[str]) -> list[str]:
+    return [label for label in labels if not label.startswith("priority:")]
+
+
+def _assign_priority_labels(
+    payload: dict[str, Any], rng: random.Random, *, min_missing: int = 10, max_missing: int = 15
+) -> None:
+    issues_raw = payload.get("issues")
+    if not isinstance(issues_raw, list) or not issues_raw:
+        return
+    issues = [issue for issue in issues_raw if isinstance(issue, dict)]
+    if not issues:
+        return
+
+    target_missing = len(issues) // 10
+    target_missing = max(min_missing, target_missing)
+    target_missing = min(max_missing, target_missing, len(issues))
+
+    def normalise_labels(issue: dict[str, Any]) -> list[str]:
+        labels = [str(label) for label in issue.get("labels", []) if isinstance(label, str)]
+        issue["labels"] = labels
+        return labels
+
+    def has_priority(issue: dict[str, Any]) -> bool:
+        return any(label.startswith("priority:") for label in normalise_labels(issue))
+
+    missing_ids = {id(issue) for issue in issues if not has_priority(issue)}
+
+    if len(missing_ids) < target_missing:
+        candidates = [issue for issue in issues if id(issue) not in missing_ids]
+        rng.shuffle(candidates)
+        needed = min(target_missing - len(missing_ids), len(candidates))
+        for issue in candidates[:needed]:
+            labels = normalise_labels(issue)
+            issue["labels"] = _strip_priority(labels)
+            missing_ids.add(id(issue))
+    elif len(missing_ids) > target_missing:
+        to_fix = rng.sample(list(missing_ids), len(missing_ids) - target_missing)
+        fix_ids = set(to_fix)
+        for issue in issues:
+            if id(issue) in fix_ids:
+                labels = normalise_labels(issue)
+                if not any(label.startswith("priority:") for label in labels):
+                    labels.append(rng.choice(_PRIORITY_LABELS))
+                issue["labels"] = list(dict.fromkeys(labels))
+                missing_ids.discard(id(issue))
+
+    for issue in issues:
+        labels = normalise_labels(issue)
+        if id(issue) in missing_ids:
+            issue["labels"] = _strip_priority(labels)
+        else:
+            if not any(label.startswith("priority:") for label in labels):
+                labels.append(rng.choice(_PRIORITY_LABELS))
+            issue["labels"] = list(dict.fromkeys(labels))
+
+
+_STATUS_NAMES = {"1": "To Do", "3": "In Progress", "4": "Done"}
+
+
+def _append_status_change(
+    issue: dict[str, Any],
+    *,
+    previous: str,
+    new_status: str,
+    when: datetime,
+    author: str,
+) -> None:
+    changes = issue.setdefault("changelog", [])
+    change_id = _next_numeric_id((change for change in changes if isinstance(change, dict)), "id", 1)
+    entry = {
+        "id": str(change_id),
+        "created": when.isoformat(),
+        "author": author,
+        "items": [
+            {
+                "field": "status",
+                "from": previous,
+                "to": new_status,
+                "fromString": _STATUS_NAMES.get(previous, previous),
+                "toString": _STATUS_NAMES.get(new_status, new_status),
+            }
+        ],
+    }
+    changes.append(entry)
+    changes.sort(key=lambda item: item.get("created", ""))
+
+
+def _mark_issue_stale(
+    issue: dict[str, Any], rng: random.Random, now: datetime, *, min_age_days: int = 5
+) -> None:
+    created = _parse_timestamp(issue.get("created"), now - timedelta(days=30))
+    previous_status = str(issue.get("status_id") or "1")
+    stale_days = rng.randint(min_age_days + 1, min_age_days + 6)
+    stale_ts = now - timedelta(days=stale_days)
+    if created and stale_ts <= created:
+        stale_ts = created + timedelta(days=min_age_days + 1)
+    issue["status_id"] = "3"
+    issue["updated"] = stale_ts.isoformat()
+    author = str(issue.get("assignee_id") or issue.get("reporter_id") or "alice")
+    if previous_status != "3":
+        _append_status_change(issue, previous=previous_status, new_status="3", when=stale_ts, author=author)
+
+
+def _ensure_stale_in_progress(
+    payload: dict[str, Any],
+    rng: random.Random,
+    *,
+    min_count: int = 10,
+    max_count: int = 12,
+    min_age_days: int = 5,
+) -> None:
+    issues_raw = payload.get("issues")
+    if not isinstance(issues_raw, list) or not issues_raw:
+        return
+    issues = [issue for issue in issues_raw if isinstance(issue, dict)]
+    if not issues:
+        return
+    now = datetime.now(UTC)
+    target = max(min_count, len(issues) // 20)
+    target = min(max_count, target, len(issues))
+
+    def is_stale(issue: dict[str, Any]) -> bool:
+        status_id = str(issue.get("status_id") or "")
+        if status_id != "3":
+            return False
+        updated = _parse_timestamp(issue.get("updated"), now)
+        return updated is not None and (now - updated) >= timedelta(days=min_age_days)
+
+    stale_ids = {id(issue) for issue in issues if is_stale(issue)}
+
+    if len(stale_ids) < target:
+        candidates = [issue for issue in issues if id(issue) not in stale_ids]
+        rng.shuffle(candidates)
+        needed = min(target - len(stale_ids), len(candidates))
+        for issue in candidates[:needed]:
+            _mark_issue_stale(issue, rng, now, min_age_days=min_age_days)
+            stale_ids.add(id(issue))
+    elif len(stale_ids) > target:
+        to_refresh = rng.sample(list(stale_ids), len(stale_ids) - target)
+        refresh_ids = set(to_refresh)
+        for issue in issues:
+            if id(issue) in refresh_ids:
+                recent = now - timedelta(days=rng.randint(0, max(min_age_days - 1, 0)))
+                issue["updated"] = recent.isoformat()
+                stale_ids.discard(id(issue))
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate mock Jira seed data")
@@ -446,6 +605,8 @@ def main(argv: list[str] | None = None) -> None:
     post_rng = random.Random(credit_seed + 97)
     _normalise_sprint_windows(payload, post_rng)
     _inject_handoff_threads(payload, handoff_probability, post_rng)
+    _assign_priority_labels(payload, post_rng)
+    _ensure_stale_in_progress(payload, post_rng)
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
     print(f"Seed saved to {output_path}")

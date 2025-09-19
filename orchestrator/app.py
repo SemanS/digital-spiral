@@ -6,7 +6,7 @@ import hmac
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Literal, Tuple
 
@@ -18,7 +18,7 @@ from rapidfuzz.distance import Levenshtein
 from clients.python.jira_adapter import JiraAdapter
 
 from . import audit, credit, metrics as metrics_module
-from .metrics import estimate_savings
+from .models import Impact
 
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "http://localhost:9000")
 JIRA_TOKEN = os.getenv("JIRA_TOKEN", "mock-token")
@@ -29,6 +29,7 @@ FORGE_ALLOWLIST = {
     for host in os.getenv("FORGE_ALLOWLIST", "").split(",")
     if host.strip()
 }
+ORCHESTRATOR_TOKEN = os.getenv("ORCHESTRATOR_TOKEN") or os.getenv("ORCH_TOKEN")
 AUTO_REGISTER_WEBHOOK = os.getenv("AUTO_REGISTER_WEBHOOK", "1").lower() not in {
     "0",
     "false",
@@ -61,6 +62,7 @@ adapter = JiraAdapter(JIRA_BASE_URL, JIRA_TOKEN)
 LEDGER: dict[str, Dict[str, Any]] = {}  # key -> metrics
 SUGGESTIONS: dict[str, Dict[str, Any]] = {}
 APPLY_RESULTS: dict[str, Dict[str, Any]] = {}
+APPLY_FINGERPRINTS: dict[str, str] = {}
 
 DEFAULT_ESTIMATED_SAVINGS_SECONDS = int(os.getenv("DEFAULT_ESTIMATED_SAVINGS", "180"))
 
@@ -82,6 +84,8 @@ class ApplyAction(BaseModel):
 class ApplyIn(BaseModel):
     issueKey: str
     action: ApplyAction
+    proposalEventId: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
 
 
 class SecondsSavedIn(BaseModel):
@@ -122,10 +126,35 @@ def _client_hosts(request: Request) -> List[str]:
     return hosts
 
 
-def ensure_authorized(request: Request) -> Optional[str]:
-    secret = request.headers.get("x-ds-secret")
-    if not secret or not hmac.compare_digest(secret, FORGE_SHARED_SECRET):
-        raise HTTPException(401, "Unauthorized")
+def verify_forge_signature(request: Request, body: bytes) -> None:
+    signature = request.headers.get("x-forge-signature")
+    if not signature:
+        raise HTTPException(401, "Missing X-Forge-Signature")
+    algorithm, _, value = signature.partition("=")
+    if not value:
+        digest = algorithm
+        algorithm = "sha256"
+    else:
+        digest = value
+    if algorithm.lower() != "sha256":
+        raise HTTPException(400, "Unsupported signature algorithm")
+    expected = hashlib.sha256(FORGE_SHARED_SECRET.encode("utf-8") + body).hexdigest()
+    if not hmac.compare_digest(digest, expected):
+        raise HTTPException(401, "Invalid signature")
+
+
+def ensure_authorized(request: Request, *, body: bytes | None = None) -> Optional[str]:
+    if ORCHESTRATOR_TOKEN:
+        expected = f"Bearer {ORCHESTRATOR_TOKEN}"
+        provided = request.headers.get("authorization")
+        if provided != expected:
+            raise HTTPException(401, "Unauthorized")
+    else:
+        secret = request.headers.get("x-ds-secret")
+        if not secret or not hmac.compare_digest(secret, FORGE_SHARED_SECRET):
+            raise HTTPException(401, "Unauthorized")
+    if FORGE_SHARED_SECRET:
+        verify_forge_signature(request, body or b"")
     if FORGE_ALLOWLIST:
         hosts = _client_hosts(request)
         if not any(host in FORGE_ALLOWLIST for host in hosts):
@@ -211,14 +240,12 @@ def record_apply_failure(
     if reason:
         inputs["reason"] = reason
     credit.append_event(
-        {
-            "issueKey": issue_key,
-            "actor": actor,
-            "action": "apply.failed",
-            "inputs": inputs,
-            "impact": {"secondsSaved": 0, "quality": 0.0},
-            "attribution": {"split": []},
-        }
+        issue_key=issue_key,
+        action="apply.failed",
+        actor=actor,
+        inputs=inputs,
+        impact={"secondsSaved": 0, "quality": 0.0},
+        attributions=[],
     )
 
 
@@ -385,7 +412,7 @@ def ingest_issue(issue_key: str, issue_payload: Dict[str, Any], tenant: Optional
         )
 
     for proposal in proposals:
-        proposal["estimatedSeconds"] = estimate_savings(proposal.get("kind", ""))
+        proposal["estimatedSeconds"] = metrics_module.estimate_seconds(proposal.get("kind", ""))
     estimated_total = sum(int(proposal.get("estimatedSeconds") or 0) for proposal in proposals)
     estimated = {"seconds": estimated_total or DEFAULT_ESTIMATED_SAVINGS_SECONDS}
     response = {"issueKey": issue_key, "proposals": proposals, "estimated_savings": estimated}
@@ -422,7 +449,12 @@ def _resolve_labels(issue_key: str, action: ApplyAction) -> Tuple[List[str], str
 
 
 def perform_apply(
-    issue_key: str, action: ApplyAction, tenant: Optional[str], actor: Dict[str, Any]
+    issue_key: str,
+    action: ApplyAction,
+    tenant: Optional[str],
+    actor: Dict[str, Any],
+    *,
+    context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     record_tenant(issue_key, tenant)
     started = time.perf_counter()
@@ -469,7 +501,10 @@ def perform_apply(
         raise HTTPException(400, f"Unsupported action kind {action.kind}")
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
-    credit_seconds = estimate_savings(action.kind, {"proposal": suggestion} if suggestion else None)
+    seconds_context: Dict[str, Any] = {"proposal": suggestion or {}}
+    if context:
+        seconds_context["context"] = context
+    credit_seconds = metrics_module.estimate_seconds(action.kind, seconds_context)
     entry = LEDGER.setdefault(issue_key, {"issueKey": issue_key, "history": []})
     history = entry.setdefault("history", [])
     record = {
@@ -489,6 +524,8 @@ def perform_apply(
     entry["applications"] = int(entry.get("applications", 0)) + 1
     entry["last_apply_at"] = record["applied_at"]
     entry["last_action"] = record
+    entry["last_actor"] = actor
+    entry["last_seconds_saved"] = credit_seconds
     proposal_context: Dict[str, Any] = {}
     if suggestion:
         proposal_context.update({k: v for k, v in suggestion.items() if k not in {"explain"}})
@@ -497,39 +534,29 @@ def perform_apply(
         proposal_context["labels"] = applied_detail["labels"]
     if applied_detail.get("transitionId"):
         proposal_context["transitionId"] = applied_detail["transitionId"]
-    event = credit.build_apply_event(
-        issue_key,
-        proposal_context,
-        actor,
-        {"secondsSaved": credit_seconds, "quality": quality, "text": final_text},
-    )
-    record["credit_event_id"] = event.id
-    credit_snapshot = {
-        "secondsSaved": event.impact.secondsSaved,
-        "quality": event.impact.quality,
-        "splits": [
-            {"id": split.id, "weight": split.weight}
-            for split in event.attribution.split
-        ],
-        "reason": event.attribution.reason,
-        "eventId": event.id,
-        "hash": event.hash,
+    entry["last_proposal_context"] = proposal_context
+    result_payload = {
+        "status": "success",
+        "action": action.kind,
+        "details": applied_detail,
     }
-    entry.setdefault("credit_events", []).append(event.model_dump(mode="json"))
-    entry["last_credit_event"] = credit_snapshot
-    record_tenant(issue_key, tenant)
     return {
-        "ok": True,
-        "applied": applied_detail,
-        "credit": credit_snapshot,
-        "ledger": entry,
+        "result": result_payload,
+        "entry": entry,
+        "record": record,
+        "seconds_saved": credit_seconds,
+        "quality": quality,
+        "proposal_context": proposal_context,
+        "suggestion": suggestion,
+        "final_text": final_text,
     }
 
 
 # -------- Ingest: create proposals --------
 @app.get("/v1/jira/ingest")
-def ingest(request: Request, issueKey: str = Query(..., alias="issueKey")):
-    tenant = ensure_authorized(request)
+async def ingest(request: Request, issueKey: str = Query(..., alias="issueKey")):
+    body = await request.body()
+    tenant = ensure_authorized(request, body=body)
     try:
         issue_payload = adapter.get_issue(issueKey)
     except Exception as exc:
@@ -539,16 +566,27 @@ def ingest(request: Request, issueKey: str = Query(..., alias="issueKey")):
 
 # -------- Apply: execute selected action --------
 @app.post("/v1/jira/apply")
-def apply(request: Request, payload: ApplyIn):
-    tenant = ensure_authorized(request)
+async def apply(request: Request, payload: ApplyIn):
+    body = await request.body()
+    tenant = ensure_authorized(request, body=body)
     actor = resolve_actor(request)
     idem_key = request.headers.get("idempotency-key")
     if not idem_key:
         raise HTTPException(400, "Missing Idempotency-Key")
+    payload_hash = hashlib.sha256(body or b"").hexdigest()
     if idem_key in APPLY_RESULTS:
+        cached_hash = APPLY_FINGERPRINTS.get(idem_key)
+        if cached_hash and cached_hash != payload_hash:
+            raise HTTPException(409, "Idempotency-Key conflict")
         return APPLY_RESULTS[idem_key]
     try:
-        result = perform_apply(payload.issueKey, payload.action, tenant, actor)
+        apply_data = perform_apply(
+            payload.issueKey,
+            payload.action,
+            tenant,
+            actor,
+            context=payload.context,
+        )
     except HTTPException as exc:
         reason = str(exc.detail) if exc.detail else "HTTP error"
         record_apply_failure(payload.issueKey, payload.action, actor, reason)
@@ -577,6 +615,46 @@ def apply(request: Request, payload: ApplyIn):
             }
         )
         raise
+
+    execution_context = {
+        "secondsSaved": apply_data["seconds_saved"],
+        "quality": apply_data["quality"],
+        "text": apply_data["final_text"],
+    }
+    shares, attribution_reason = credit.tip_credit(
+        payload.issueKey,
+        apply_data["proposal_context"],
+        actor,
+        execution_context,
+    )
+    try:
+        event = credit.append_event(
+            issue_key=payload.issueKey,
+            action="apply",
+            actor=actor,
+            inputs=apply_data["proposal_context"],
+            impact=Impact(seconds_saved=int(apply_data["seconds_saved"]), quality=apply_data["quality"]),
+            attributions=shares,
+            parents=[payload.proposalEventId] if payload.proposalEventId else [],
+            idempotency_key=idem_key,
+            attribution_reason=attribution_reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+    record = apply_data["record"]
+    record["credit_event_id"] = event.id
+    event_payload = event.model_dump(mode="json", by_alias=True)
+    entry = apply_data["entry"]
+    entry.setdefault("credit_events", []).append(event_payload)
+    entry["last_credit_event"] = event_payload
+
+    response_payload = {
+        "ok": True,
+        "result": apply_data["result"],
+        "credit": event_payload,
+    }
+
     audit.log_event(
         {
             "event": "apply.success",
@@ -584,12 +662,13 @@ def apply(request: Request, payload: ApplyIn):
             "actionId": payload.action.id,
             "actor": actor,
             "tenant": tenant,
-            "secondsSaved": result.get("credit", {}).get("secondsSaved"),
-            "eventId": result.get("credit", {}).get("eventId"),
+            "secondsSaved": event.impact.secondsSaved,
+            "eventId": event.id,
         }
     )
-    APPLY_RESULTS[idem_key] = result
-    return result
+    APPLY_RESULTS[idem_key] = response_payload
+    APPLY_FINGERPRINTS[idem_key] = payload_hash
+    return response_payload
 
 
 # -------- Ledger read --------
@@ -607,21 +686,74 @@ def credit_summary_endpoint(
 
 @app.get("/v1/credit/agent/{id}")
 def credit_agent_endpoint(
-    id: str, since: Optional[str] = Query(None), limit: int = Query(20, ge=0, le=100)
+    id: str,
+    window: str = Query("30d"),
+    limit: int = Query(20, ge=0, le=100),
 ):
-    return credit.rollup_for_agent(id, since=parse_since(since), limit=limit)
+    days = parse_window_days(window)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    summary = credit.agent_summary(id, since=since, limit=limit)
+    events = [event.model_dump(mode="json", by_alias=True) for event in summary.events]
+    return {
+        "agent": summary.agentId,
+        "window_days": days,
+        "total_seconds": summary.totalSecondsSaved,
+        "score": summary.score,
+        "events": events,
+    }
 
 
 @app.get("/v1/credit/issue/{key}")
 def credit_issue_endpoint(
-    key: str, since: Optional[str] = Query(None), limit: int = Query(5, ge=0, le=50)
+    key: str,
+    since: Optional[str] = Query(None),
+    limit: int = Query(20, ge=0, le=100),
 ):
-    return credit.rollup_for_issue(key, since=parse_since(since), limit=limit)
+    summary = credit.issue_summary(key, since=parse_since(since), limit=limit)
+    contributors = [
+        {
+            "agent_id": contributor.id,
+            "seconds": contributor.secondsSaved,
+            "share": contributor.share,
+            "events": contributor.events,
+        }
+        for contributor in summary.contributors
+    ]
+    events = [event.model_dump(mode="json", by_alias=True) for event in summary.recentEvents]
+    payload: Dict[str, Any] = {
+        "issue": summary.issueKey,
+        "total_seconds": summary.totalSecondsSaved,
+        "contributors": contributors,
+        "events": events,
+    }
+    if summary.windowSecondsSaved is not None:
+        payload["window_seconds"] = summary.windowSecondsSaved
+    if summary.windowStart is not None:
+        payload["window_start"] = summary.windowStart.isoformat()
+    return payload
 
 
 @app.get("/v1/credit/chain")
 def credit_chain_endpoint(limit: int = Query(100, ge=1, le=500)):
     return credit.credit_chain(limit=limit)
+
+
+@app.get("/v1/agents/top")
+def agents_top_endpoint(
+    window: str = Query("30d"), limit: int = Query(10, ge=1, le=100)
+):
+    days = parse_window_days(window)
+    contributors = metrics_module.top_contributors(window_days=days)
+    payload = [
+        {
+            "agent_id": item.get("id"),
+            "seconds": float(item.get("secondsSaved", 0.0)),
+            "share": float(item.get("share", 0.0)),
+            "events": int(item.get("events", 0)),
+        }
+        for item in contributors[:limit]
+    ]
+    return {"window_days": days, "contributors": payload}
 
 
 @app.post("/v1/metrics/seconds-saved")
