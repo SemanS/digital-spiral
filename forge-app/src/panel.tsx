@@ -1,4 +1,5 @@
 import {
+  Badge,
   IssuePanel,
   SectionMessage,
   useProductContext,
@@ -120,18 +121,27 @@ function describeCredit(credit: CreditInfo | null | undefined, actorId?: string 
   if (!credit?.secondsSaved) {
     return '';
   }
-  const seconds = Math.round(credit.secondsSaved);
+  const seconds = Math.max(Math.round(credit.secondsSaved), 0);
   const splits = credit.splits || [];
   if (!splits.length) {
     return `−${seconds}s`;
   }
-  const detail = splits
-    .map((split) => {
-      const shareSeconds = Math.round(seconds * split.weight);
-      return `${participantLabel(split.id, actorId)} ${shareSeconds}s`;
-    })
-    .join(' / ');
-  return `−${seconds}s (${detail})`;
+  const totalWeight = splits.reduce((sum, split) => sum + (split.weight ?? 0), 0) || 1;
+  const aiWeight = splits
+    .filter((split) => split.id.startsWith('ai.'))
+    .reduce((sum, split) => sum + (split.weight ?? 0), 0);
+  const actorWeight = actorId
+    ? splits
+        .filter((split) => split.id === actorId)
+        .reduce((sum, split) => sum + (split.weight ?? 0), 0)
+    : 0;
+  const humanFallback = splits
+    .filter((split) => split.id.startsWith('human.'))
+    .reduce((sum, split) => sum + (split.weight ?? 0), 0);
+  const youWeight = actorId ? actorWeight : humanFallback;
+  const aiPercent = Math.round((aiWeight / totalWeight) * 100);
+  const youPercent = Math.round((youWeight / totalWeight) * 100);
+  return `−${seconds}s (AI ${aiPercent}% / You ${youPercent}%)`;
 }
 
 function formatSplitPercent(weight: number): string {
@@ -183,7 +193,8 @@ function ContributorsCard({ credit, actorId }: ContributorsCardProps) {
       : null;
 
   return (
-    <SectionMessage appearance="information" title={`Contributors • Saved: ${totalSaved}`}>
+    <SectionMessage appearance="information" title="Contributors">
+      <Badge text={`Saved: ${totalSaved}`} />
       {sprintSaved ? (
         <Text>
           Sprint window: <Strong>{sprintSaved}</Strong>
@@ -209,13 +220,13 @@ function ContributorsCard({ credit, actorId }: ContributorsCardProps) {
           {credit.recentEvents.slice(0, MAX_RECENT_EVENTS).map((event) => {
             const actorLabel = participantLabel(event.actor?.id || event.actor?.type || '', actorId);
             const seconds = event.impact?.secondsSaved;
-            const splits = formatEventSplits(event.attribution?.split, actorId, seconds);
+            const splits = formatEventSplits(event.attributions, actorId, seconds);
             return (
               <Text key={event.id}>
                 {event.ts} · <Strong>{event.action}</Strong> · {actorLabel} ·{' '}
                 {seconds !== undefined && seconds !== null ? `${formatSavedSeconds(seconds)} s` : '0 s'}
                 {splits ? ` • ${splits}` : ''}
-                {event.attribution?.reason ? ` • ${event.attribution.reason}` : ''}
+                {event.attributionReason ? ` • ${event.attributionReason}` : ''}
               </Text>
             );
           })}

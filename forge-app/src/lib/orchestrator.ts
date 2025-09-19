@@ -19,7 +19,8 @@ export type CreditEvent = {
   action: string;
   inputs?: Record<string, any>;
   impact: { secondsSaved: number; quality?: number | null };
-  attribution: { split: CreditSplit[]; reason?: string | null };
+  attributions: CreditSplit[];
+  attributionReason?: string | null;
   parents?: string[];
   prevHash?: string | null;
   hash?: string | null;
@@ -113,13 +114,17 @@ function buildAuthHeaders(cfg: ProjectConfig, body: string, opts?: RequestOption
 
 function mapCreditEvent(event: any): CreditEvent {
   const impact = event?.impact ?? {};
-  const attributionReason = event?.attributionReason ?? event?.reason ?? null;
-  const splits: CreditSplit[] = Array.isArray(event?.attributions)
-    ? event.attributions.map((item: any) => ({
-        id: String(item?.agentId ?? item?.agent_id ?? item?.id ?? ''),
-        weight: typeof item?.weight === 'number' ? item.weight : 0,
-      }))
-    : [];
+  const attributionSource = Array.isArray(event?.attributions)
+    ? event.attributions
+    : Array.isArray(event?.attribution?.split)
+      ? event.attribution.split
+      : [];
+  const splits: CreditSplit[] = attributionSource.map((item: any) => ({
+    id: String(item?.agentId ?? item?.agent_id ?? item?.id ?? ''),
+    weight: typeof item?.weight === 'number' ? item.weight : 0,
+  }));
+  const attributionReason =
+    event?.attributionReason ?? event?.attribution?.reason ?? event?.reason ?? null;
   return {
     id: String(event?.id ?? ''),
     ts: event?.ts ?? new Date().toISOString(),
@@ -131,7 +136,8 @@ function mapCreditEvent(event: any): CreditEvent {
       secondsSaved: Number(impact?.secondsSaved ?? 0),
       quality: impact?.quality ?? null,
     },
-    attribution: { split: splits, reason: attributionReason },
+    attributions: splits,
+    attributionReason,
     parents: Array.isArray(event?.parents)
       ? event.parents.map((value: any) => String(value))
       : [],
@@ -144,8 +150,8 @@ function mapCreditInfo(event: CreditEvent): CreditInfo {
   return {
     secondsSaved: event.impact.secondsSaved,
     quality: event.impact.quality ?? undefined,
-    splits: event.attribution.split,
-    reason: event.attribution.reason ?? undefined,
+    splits: event.attributions,
+    reason: event.attributionReason ?? undefined,
     eventId: event.id,
     hash: event.hash ?? undefined,
   };

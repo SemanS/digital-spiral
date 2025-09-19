@@ -88,10 +88,6 @@ class ApplyIn(BaseModel):
     context: Optional[Dict[str, Any]] = None
 
 
-class SecondsSavedIn(BaseModel):
-    windows: Optional[List[int]] = None
-
-
 app = FastAPI(title="Digital Spiral Orchestrator (Jira MVP)")
 
 
@@ -707,9 +703,10 @@ def credit_agent_endpoint(
 def credit_issue_endpoint(
     key: str,
     since: Optional[str] = Query(None),
-    limit: int = Query(20, ge=0, le=100),
+    limit: int = Query(20, ge=0, le=200),
 ):
-    summary = credit.issue_summary(key, since=parse_since(since), limit=limit)
+    since_dt = parse_since(since)
+    summary = credit.issue_summary(key, since=since_dt, limit=limit)
     contributors = [
         {
             "agent_id": contributor.id,
@@ -719,12 +716,15 @@ def credit_issue_endpoint(
         }
         for contributor in summary.contributors
     ]
-    events = [event.model_dump(mode="json", by_alias=True) for event in summary.recentEvents]
+    events = credit.events_for_issue(key)
+    if limit:
+        events = events[-limit:]
+    events_payload = [event.model_dump(mode="json", by_alias=True) for event in reversed(events)]
     payload: Dict[str, Any] = {
         "issue": summary.issueKey,
         "total_seconds": summary.totalSecondsSaved,
         "contributors": contributors,
-        "events": events,
+        "events": events_payload,
     }
     if summary.windowSecondsSaved is not None:
         payload["window_seconds"] = summary.windowSecondsSaved
@@ -738,37 +738,48 @@ def credit_chain_endpoint(limit: int = Query(100, ge=1, le=500)):
     return credit.credit_chain(limit=limit)
 
 
-@app.get("/v1/agents/top")
-def agents_top_endpoint(
-    window: str = Query("30d"), limit: int = Query(10, ge=1, le=100)
-):
+@app.get("/v1/credit/agents/top")
+def credit_agents_top(window: str = Query("30d"), limit: int = Query(10, ge=1, le=100)):
     days = parse_window_days(window)
-    contributors = metrics_module.top_contributors(window_days=days)
+    rankings = credit.top_agents(days, limit=None)
     payload = [
         {
-            "agent_id": item.get("id"),
-            "seconds": float(item.get("secondsSaved", 0.0)),
-            "share": float(item.get("share", 0.0)),
+            "agent_id": item.get("agent_id"),
+            "seconds": float(item.get("seconds", 0.0)),
             "events": int(item.get("events", 0)),
         }
-        for item in contributors[:limit]
+        for item in rankings[:limit]
+    ]
+    return payload
+
+
+@app.get("/v1/metrics/seconds-saved")
+def metrics_seconds_saved(window: str = Query("7d")):
+    days = parse_window_days(window)
+    return metrics_module.seconds_saved_window(days)
+
+
+@app.get("/v1/agents/top")
+def agents_top_endpoint(window: str = Query("30d"), limit: int = Query(10, ge=1, le=100)):
+    days = parse_window_days(window)
+    rankings = credit.top_agents(days, limit=None)
+    total_seconds = sum(float(item.get("seconds", 0.0)) for item in rankings) or 1.0
+    payload = [
+        {
+            "id": item.get("agent_id"),
+            "secondsSaved": float(item.get("seconds", 0.0)),
+            "share": float(item.get("seconds", 0.0)) / total_seconds,
+            "events": int(item.get("events", 0)),
+        }
+        for item in rankings[:limit]
     ]
     return {"window_days": days, "contributors": payload}
 
 
-@app.post("/v1/metrics/seconds-saved")
-def metrics_seconds_saved(payload: SecondsSavedIn | None = None):
-    raw_windows = payload.windows if payload and payload.windows else [7, 30]
-    windows: List[int] = []
-    for value in raw_windows:
-        if value is None:
-            continue
-        if value <= 0 or value > 365:
-            raise HTTPException(400, "Window value out of range")
-        windows.append(int(value))
-    if not windows:
-        windows = [7, 30]
-    return metrics_module.seconds_saved_summary(windows)
+@app.get("/v1/metrics/throughput")
+def metrics_throughput(window: str = Query("7d")):
+    days = parse_window_days(window)
+    return metrics_module.throughput(window_days=days)
 
 
 @app.get("/v1/metrics/ttr_frt_baseline")
