@@ -117,7 +117,7 @@ def _seed_projects(store: InMemoryStore, cfg: GenConfig) -> None:
     lead_dev = "alice" if "alice" in store.users else next(iter(store.users))
     lead_support = "bob" if "bob" in store.users else lead_dev
     for idx in range(cfg.software_projects):
-        key = f"DEV{idx + 1}"
+        key = "DEV" if cfg.software_projects == 1 else f"DEV{idx + 1}"
         store.projects[key] = Project(
             id=str(10000 + idx),
             key=key,
@@ -126,7 +126,7 @@ def _seed_projects(store: InMemoryStore, cfg: GenConfig) -> None:
             lead_account_id=lead_dev,
         )
     for idx in range(cfg.servicedesk_projects):
-        key = f"SUP{idx + 1}"
+        key = "SUP" if cfg.servicedesk_projects == 1 else f"SUP{idx + 1}"
         store.projects[key] = Project(
             id=str(11000 + idx),
             key=key,

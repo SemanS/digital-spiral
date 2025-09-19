@@ -6,6 +6,7 @@ import hmac
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Literal, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -14,6 +15,9 @@ from pydantic import BaseModel
 from rapidfuzz.distance import Levenshtein
 
 from clients.python.jira_adapter import JiraAdapter
+
+from . import credit
+from .metrics import estimate_savings
 
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "http://localhost:9000")
 JIRA_TOKEN = os.getenv("JIRA_TOKEN", "mock-token")
@@ -58,12 +62,6 @@ SUGGESTIONS: dict[str, Dict[str, Any]] = {}
 APPLY_RESULTS: dict[str, Dict[str, Any]] = {}
 
 DEFAULT_ESTIMATED_SAVINGS_SECONDS = int(os.getenv("DEFAULT_ESTIMATED_SAVINGS", "180"))
-CREDIT_BY_KIND = {
-    "comment": 150,
-    "transition": 90,
-    "set-labels": 45,
-    "link": 60,
-}
 
 
 # --- Pydantic DTOs ---
@@ -113,6 +111,44 @@ def ensure_authorized(request: Request) -> Optional[str]:
             raise HTTPException(403, "Forbidden")
     tenant = request.headers.get("x-ds-tenant")
     return tenant if tenant else None
+
+
+def resolve_actor(request: Request) -> Dict[str, Any]:
+    header = (request.headers.get("x-ds-actor") or "").strip()
+    actor_type = "human"
+    actor_id = "unknown"
+    if header:
+        if ":" in header:
+            candidate_type, candidate_id = header.split(":", 1)
+            if candidate_id:
+                actor_type = candidate_type
+                actor_id = candidate_id
+        elif "." in header and header.split(".", 1)[0] in {"human", "ai", "tool"}:
+            actor_type, actor_id = header.split(".", 1)
+        else:
+            actor_id = header
+    actor = {
+        "type": actor_type.strip().lower() or "human",
+        "id": actor_id.strip() or "unknown",
+    }
+    display = request.headers.get("x-ds-actor-display")
+    if display:
+        actor["display"] = display.strip()
+    return actor
+
+
+def parse_since(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:  # pragma: no cover - FastAPI handles HTTPException
+        raise HTTPException(400, "Invalid since parameter") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    return parsed
 
 
 def record_tenant(issue_key: str, tenant: Optional[str]) -> None:
@@ -296,7 +332,10 @@ def ingest_issue(issue_key: str, issue_payload: Dict[str, Any], tenant: Optional
             }
         )
 
-    estimated = {"seconds": DEFAULT_ESTIMATED_SAVINGS_SECONDS}
+    for proposal in proposals:
+        proposal["estimatedSeconds"] = estimate_savings(proposal.get("kind", ""))
+    estimated_total = sum(int(proposal.get("estimatedSeconds") or 0) for proposal in proposals)
+    estimated = {"seconds": estimated_total or DEFAULT_ESTIMATED_SAVINGS_SECONDS}
     response = {"issueKey": issue_key, "proposals": proposals, "estimated_savings": estimated}
     SUGGESTIONS[issue_key] = response
     entry = LEDGER.setdefault(issue_key, {"issueKey": issue_key, "history": []})
@@ -330,17 +369,19 @@ def _resolve_labels(issue_key: str, action: ApplyAction) -> Tuple[List[str], str
     return [str(label) for label in labels], mode
 
 
-def perform_apply(issue_key: str, action: ApplyAction, tenant: Optional[str]) -> Dict[str, Any]:
+def perform_apply(
+    issue_key: str, action: ApplyAction, tenant: Optional[str], actor: Dict[str, Any]
+) -> Dict[str, Any]:
     record_tenant(issue_key, tenant)
     started = time.perf_counter()
     applied_detail: Dict[str, Any] = {"id": action.id, "kind": action.kind}
     final_text = ""
     quality = 1.0
+    suggestion = lookup_suggestion(issue_key, action.id)
 
     if action.kind == "comment":
         body = action.body_adf
         if body is None:
-            suggestion = lookup_suggestion(issue_key, action.id)
             body = suggestion.get("body_adf") if suggestion else None
         if body is None:
             raise HTTPException(400, "Missing body_adf for comment action")
@@ -376,7 +417,7 @@ def perform_apply(issue_key: str, action: ApplyAction, tenant: Optional[str]) ->
         raise HTTPException(400, f"Unsupported action kind {action.kind}")
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
-    credit_seconds = CREDIT_BY_KIND.get(action.kind, 30)
+    credit_seconds = estimate_savings(action.kind, {"proposal": suggestion} if suggestion else None)
     entry = LEDGER.setdefault(issue_key, {"issueKey": issue_key, "history": []})
     history = entry.setdefault("history", [])
     record = {
@@ -396,11 +437,39 @@ def perform_apply(issue_key: str, action: ApplyAction, tenant: Optional[str]) ->
     entry["applications"] = int(entry.get("applications", 0)) + 1
     entry["last_apply_at"] = record["applied_at"]
     entry["last_action"] = record
+    proposal_context: Dict[str, Any] = {}
+    if suggestion:
+        proposal_context.update({k: v for k, v in suggestion.items() if k not in {"explain"}})
+    proposal_context.update(action.model_dump(exclude_none=True))
+    if applied_detail.get("labels"):
+        proposal_context["labels"] = applied_detail["labels"]
+    if applied_detail.get("transitionId"):
+        proposal_context["transitionId"] = applied_detail["transitionId"]
+    event = credit.build_apply_event(
+        issue_key,
+        proposal_context,
+        actor,
+        {"secondsSaved": credit_seconds, "quality": quality, "text": final_text},
+    )
+    record["credit_event_id"] = event.id
+    credit_snapshot = {
+        "secondsSaved": event.impact.secondsSaved,
+        "quality": event.impact.quality,
+        "splits": [
+            {"id": split.id, "weight": split.weight}
+            for split in event.attribution.split
+        ],
+        "reason": event.attribution.reason,
+        "eventId": event.id,
+        "hash": event.hash,
+    }
+    entry.setdefault("credit_events", []).append(event.model_dump(mode="json"))
+    entry["last_credit_event"] = credit_snapshot
     record_tenant(issue_key, tenant)
     return {
         "ok": True,
         "applied": applied_detail,
-        "credit": {"seconds": credit_seconds},
+        "credit": credit_snapshot,
         "ledger": entry,
     }
 
@@ -420,12 +489,13 @@ def ingest(request: Request, issueKey: str = Query(..., alias="issueKey")):
 @app.post("/v1/jira/apply")
 def apply(request: Request, payload: ApplyIn):
     tenant = ensure_authorized(request)
+    actor = resolve_actor(request)
     idem_key = request.headers.get("idempotency-key")
     if not idem_key:
         raise HTTPException(400, "Missing Idempotency-Key")
     if idem_key in APPLY_RESULTS:
         return APPLY_RESULTS[idem_key]
-    result = perform_apply(payload.issueKey, payload.action, tenant)
+    result = perform_apply(payload.issueKey, payload.action, tenant, actor)
     APPLY_RESULTS[idem_key] = result
     return result
 
@@ -434,6 +504,32 @@ def apply(request: Request, payload: ApplyIn):
 @app.get("/v1/ledger")
 def get_ledger(issueKey: str = Query(..., alias="issueKey")):
     return LEDGER.get(issueKey, {"issueKey": issueKey, "history": []})
+
+
+@app.get("/v1/credit/summary")
+def credit_summary_endpoint(
+    since: Optional[str] = Query(None), limit: int = Query(10, ge=1, le=50)
+):
+    return credit.summary(since=parse_since(since), limit=limit)
+
+
+@app.get("/v1/credit/agent/{id}")
+def credit_agent_endpoint(
+    id: str, since: Optional[str] = Query(None), limit: int = Query(20, ge=0, le=100)
+):
+    return credit.agent_summary(id, since=parse_since(since), limit=limit)
+
+
+@app.get("/v1/credit/issue/{key}")
+def credit_issue_endpoint(
+    key: str, since: Optional[str] = Query(None), limit: int = Query(5, ge=0, le=50)
+):
+    return credit.issue_summary(key, since=parse_since(since), limit=limit)
+
+
+@app.get("/v1/credit/chain")
+def credit_chain_endpoint(limit: int = Query(100, ge=1, le=500)):
+    return credit.credit_chain(limit=limit)
 
 
 # -------- Tiny UI --------
