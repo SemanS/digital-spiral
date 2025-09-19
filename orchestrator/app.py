@@ -6,9 +6,9 @@ import hmac
 import logging
 import os
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Literal, Tuple
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from rapidfuzz.distance import Levenshtein
@@ -18,7 +18,12 @@ from clients.python.jira_adapter import JiraAdapter
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "http://localhost:9000")
 JIRA_TOKEN = os.getenv("JIRA_TOKEN", "mock-token")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "dev-secret")
-SIGNATURE_VERSION = int(os.getenv("SIGNATURE_VERSION", "2"))
+ORCH_SECRET = os.getenv("ORCH_SECRET", "forge-dev-secret")
+FORGE_ALLOWLIST = {
+    host.strip()
+    for host in os.getenv("FORGE_ALLOWLIST", "").split(",")
+    if host.strip()
+}
 AUTO_REGISTER_WEBHOOK = os.getenv("AUTO_REGISTER_WEBHOOK", "1").lower() not in {
     "0",
     "false",
@@ -48,20 +53,36 @@ logger = logging.getLogger("digital_spiral.orchestrator")
 adapter = JiraAdapter(JIRA_BASE_URL, JIRA_TOKEN)
 
 # --- in-memory "ledger" ---
-LEDGER: dict[str, dict] = {}  # key -> metrics
-SUGGESTIONS: dict[str, dict[str, Any]] = {}
+LEDGER: dict[str, Dict[str, Any]] = {}  # key -> metrics
+SUGGESTIONS: dict[str, Dict[str, Any]] = {}
+APPLY_RESULTS: dict[str, Dict[str, Any]] = {}
+
+DEFAULT_ESTIMATED_SAVINGS_SECONDS = int(os.getenv("DEFAULT_ESTIMATED_SAVINGS", "180"))
+CREDIT_BY_KIND = {
+    "comment": 150,
+    "transition": 90,
+    "set-labels": 45,
+    "link": 60,
+}
 
 
 # --- Pydantic DTOs ---
-class IngestIn(BaseModel):
-    issue: Dict[str, Any]
+class ApplyAction(BaseModel):
+    id: str
+    kind: Literal["comment", "transition", "set-labels", "link"]
+    explain: Optional[str] = None
+    body_adf: Optional[Dict[str, Any]] = None
+    transitionId: Optional[str] = None
+    transitionName: Optional[str] = None
+    labels: Optional[List[str]] = None
+    mode: Optional[str] = None
+    url: Optional[str] = None
+    title: Optional[str] = None
 
 
 class ApplyIn(BaseModel):
     issueKey: str
-    accepted_action_ids: List[str]
-    playbook_id: str | None = None
-    draft_reply_adf: Dict[str, Any] | None = None
+    action: ApplyAction
 
 
 app = FastAPI(title="Digital Spiral Orchestrator (Jira MVP)")
@@ -70,6 +91,47 @@ app = FastAPI(title="Digital Spiral Orchestrator (Jira MVP)")
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+def _client_hosts(request: Request) -> List[str]:
+    hosts: List[str] = []
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        hosts.extend([segment.strip() for segment in forwarded.split(",") if segment.strip()])
+    if request.client and request.client.host:
+        hosts.append(request.client.host)
+    return hosts
+
+
+def ensure_authorized(request: Request) -> Optional[str]:
+    secret = request.headers.get("x-ds-secret")
+    if not secret or not hmac.compare_digest(secret, ORCH_SECRET):
+        raise HTTPException(401, "Unauthorized")
+    if FORGE_ALLOWLIST:
+        hosts = _client_hosts(request)
+        if not any(host in FORGE_ALLOWLIST for host in hosts):
+            raise HTTPException(403, "Forbidden")
+    tenant = request.headers.get("x-ds-tenant")
+    return tenant if tenant else None
+
+
+def record_tenant(issue_key: str, tenant: Optional[str]) -> None:
+    if not tenant:
+        return
+    entry = LEDGER.setdefault(issue_key, {"issueKey": issue_key, "history": []})
+    tenants = entry.setdefault("tenants", [])
+    if tenant not in tenants:
+        tenants.append(tenant)
+
+
+def lookup_suggestion(issue_key: str, action_id: str) -> Optional[Dict[str, Any]]:
+    suggestion = SUGGESTIONS.get(issue_key)
+    if not suggestion:
+        return None
+    for proposal in suggestion.get("proposals", []):
+        if proposal.get("id") == action_id:
+            return proposal
+    return None
 
 
 async def ensure_webhook_registered() -> None:
@@ -129,6 +191,22 @@ def adf_from_text(text: str) -> dict:
     }
 
 
+def adf_to_plain_text(node: Any) -> str:
+    if not node:
+        return ""
+    if isinstance(node, str):
+        return node
+    if isinstance(node, list):
+        return " ".join(filter(None, (adf_to_plain_text(child) for child in node)))
+    if isinstance(node, dict):
+        node_type = node.get("type")
+        if node_type == "text":
+            return str(node.get("text") or "")
+        if "content" in node:
+            return adf_to_plain_text(node.get("content"))
+    return ""
+
+
 def compute_quality(draft_text: str, final_text: str) -> float:
     if not draft_text:
         return 1.0
@@ -157,156 +235,227 @@ async def jira_webhook(request: Request):
     body = await request.body()
     try:
         verify_signature(request.headers, body)
-    except HTTPException as e:
-        raise e
+    except HTTPException as exc:
+        raise exc
     payload = await request.json()
-    # store last event per issue (for demo)
     key = payload.get("issue", {}).get("key") or payload.get("issueKey")
-    LEDGER.setdefault(key or "unknown", {}).update({"last_event": payload})
+    LEDGER.setdefault(key or "unknown", {"issueKey": key or "unknown", "history": []}).update(
+        {"last_event": payload, "last_event_at": time.time()}
+    )
     if not key:
         return {"ok": True}
     try:
         issue_payload = await asyncio.to_thread(adapter.get_issue, key)
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover - network failures are logged only
         logger.error("Failed to fetch issue %s from Jira: %s", key, exc)
         raise HTTPException(502, "Failed to fetch issue payload") from exc
-    suggestion = ingest(IngestIn(issue=issue_payload))
-    LEDGER.setdefault(key, {})
-    LEDGER[key]["last_ingest"] = time.time()
-    return {"ok": True, "suggestion": suggestion}
+    response = ingest_issue(key, issue_payload)
+    return {"ok": True, "proposals": response}
 
 
-# -------- Ingest: create draft + plan --------
-@app.post("/v1/jira/ingest")
-def ingest(i: IngestIn):
-    issue = i.issue
-    key = issue["key"]
-    fields = issue.get("fields", {})
-    summary = fields.get("summary") or "(no summary)"
-    # draft heuristic
-    if "password" in summary.lower():
-        draft = (
-            "Ahoj! Tu je postup na reset hesla: 1) Otvor ... 2) Klikni ... 3) Over ...\n"
-            "Daj vedieť, či pomohlo."
-        )
-        actions = [
-            {"id": "reply-1", "type": "reply", "public": True, "body_adf": adf_from_text(draft)},
-            {"id": "transition-1", "type": "transition", "to": "In Progress"},
-        ]
-        planned_label = None
-    else:
-        draft = (
-            "Ahoj! Pozreli sme sa na ticket: "
-            f"{summary}. Prosím pošli verziu aplikácie a posledné logy."
-        )
-        planned_label = "needs-info"
-        actions = [
-            {"id": "reply-1", "type": "reply", "public": True, "body_adf": adf_from_text(draft)},
-            {"id": "label-1", "type": "add_label", "value": "needs-info"},
-        ]
-    LEDGER.setdefault(key, {})
-    LEDGER[key]["draft_text"] = draft
-    LEDGER[key]["baseline_seconds"] = LEDGER[key].get("baseline_seconds", 120)
-    if planned_label:
-        LEDGER[key]["planned_label"] = planned_label
-    suggestion = {
-        "playbook_id": "jira-default",
-        "draft_reply_adf": adf_from_text(draft),
-        "actions": actions,
-        "explanations": ["Heuristika na základe summary", "Jednoklikové kroky pre agenta"],
-    }
-    SUGGESTIONS[key] = suggestion
-    return suggestion
-
-
-# -------- Suggestions read --------
-@app.get("/v1/suggestions/{issue_key}")
-def get_suggestion(issue_key: str):
-    suggestion = SUGGESTIONS.get(issue_key)
-    if suggestion is None:
-        raise HTTPException(404, "Suggestion not found")
-    return suggestion
-
-
-# -------- Apply: execute plan via adapter + write ledger --------
-@app.post("/v1/jira/apply")
-def apply(a: ApplyIn):
-    key = a.issueKey
-    start = time.time()
-    applied = []
-
-    # 1) reply
-    if "reply-1" in a.accepted_action_ids and a.draft_reply_adf:
-        adapter.add_comment(key, a.draft_reply_adf)
-        applied.append({"id": "reply-1", "ok": True})
-
-    # 2) simple transition (ak je v pláne)
-    if "transition-1" in a.accepted_action_ids:
-        trs = adapter.list_transitions(key)
-        # pick first transition for demo
-        if trs:
-            adapter.transition_issue(key, trs[0]["id"])
-            applied.append({"id": "transition-1", "ok": True})
-
-    # 3) label (demoverzia: update issue fields)
-    if "label-1" in a.accepted_action_ids:
-        planned_label = LEDGER.get(key, {}).get("planned_label", "needs-info")
-        try:
-            issue_payload = adapter.get_issue(key)
-        except Exception as exc:
-            raise HTTPException(502, f"Failed to load issue {key}: {exc}") from exc
-        labels = list(issue_payload.get("fields", {}).get("labels") or [])
-        if planned_label and planned_label not in labels:
-            labels.append(planned_label)
-        try:
-            adapter.update_issue_fields(key, {"labels": labels})
-        except Exception as exc:
-            raise HTTPException(502, f"Failed to update labels for {key}: {exc}") from exc
-        applied.append({"id": "label-1", "ok": True, "labels": labels})
-
-    # ledger
-    elapsed = max(time.time() - start, 1.0)
-    baseline = float(LEDGER.get(key, {}).get("baseline_seconds", 120))
-    draft_text = LEDGER.get(key, {}).get("draft_text", "")
-    final_text = draft_text  # v MVP predpokladáme Apply bez editácie
-    quality = compute_quality(draft_text, final_text)
-    credit = min(1.0, elapsed / max(1.0, baseline)) * quality
-
-    LEDGER.setdefault(key, {})
-    LEDGER[key].update(
-        {
-            "last_apply": time.time(),
-            "delta_seconds": elapsed,
-            "quality": quality,
-            "credit": credit,
-        }
+def ingest_issue(issue_key: str, issue_payload: Dict[str, Any], tenant: Optional[str] = None) -> Dict[str, Any]:
+    fields = issue_payload.get("fields", {})
+    summary = str(fields.get("summary") or "(no summary)")
+    comment_text = (
+        f"Ahoj! V tickete {issue_key} sa píše: \"{summary}\". "
+        "Prosím doplň posledné logy a verziu aplikácie, aby sme vedeli pokračovať."
     )
-    return {"applied": applied, "ledger_entry": LEDGER[key]}
+    proposals: List[Dict[str, Any]] = [
+        {
+            "id": "add-comment-1",
+            "kind": "comment",
+            "body_adf": adf_from_text(comment_text),
+            "explain": "Navrhovaná odpoveď pre zákazníka na základe summary ticketu.",
+        }
+    ]
+
+    transitions = adapter.list_transitions(issue_key)
+    if transitions:
+        target = transitions[0]
+        proposals.append(
+            {
+                "id": f"transition-{target['id']}",
+                "kind": "transition",
+                "transitionId": target["id"],
+                "transitionName": target.get("name"),
+                "explain": f"Posun na {target.get('name') or target['id']} pre okamžité riešenie.",
+            }
+        )
+
+    labels = [label for label in fields.get("labels") or [] if isinstance(label, str)]
+    needs_label = "needs-info"
+    if needs_label not in labels:
+        merged_labels = sorted({*labels, needs_label})
+        proposals.append(
+            {
+                "id": f"label-{needs_label}",
+                "kind": "set-labels",
+                "labels": merged_labels,
+                "mode": "merge",
+                "explain": "Pridá label needs-info na signalizáciu čakajúcej odpovede.",
+            }
+        )
+
+    estimated = {"seconds": DEFAULT_ESTIMATED_SAVINGS_SECONDS}
+    response = {"issueKey": issue_key, "proposals": proposals, "estimated_savings": estimated}
+    SUGGESTIONS[issue_key] = response
+    entry = LEDGER.setdefault(issue_key, {"issueKey": issue_key, "history": []})
+    entry["last_ingest_at"] = time.time()
+    entry["estimated_savings"] = estimated
+    entry["draft_text"] = comment_text
+    record_tenant(issue_key, tenant)
+    return response
+
+
+def _resolve_transition_id(issue_key: str, action: ApplyAction) -> str:
+    transition_id = action.transitionId
+    if transition_id:
+        return transition_id
+    suggestion = lookup_suggestion(issue_key, action.id)
+    if suggestion and suggestion.get("transitionId"):
+        return str(suggestion["transitionId"])
+    raise HTTPException(400, "Missing transitionId for transition action")
+
+
+def _resolve_labels(issue_key: str, action: ApplyAction) -> Tuple[List[str], str]:
+    labels = action.labels
+    mode = (action.mode or "merge").lower()
+    suggestion = lookup_suggestion(issue_key, action.id)
+    if not labels and suggestion:
+        labels = suggestion.get("labels")
+        if suggestion.get("mode"):
+            mode = str(suggestion.get("mode")).lower()
+    if not labels:
+        raise HTTPException(400, "Missing labels for set-labels action")
+    return [str(label) for label in labels], mode
+
+
+def perform_apply(issue_key: str, action: ApplyAction, tenant: Optional[str]) -> Dict[str, Any]:
+    record_tenant(issue_key, tenant)
+    started = time.perf_counter()
+    applied_detail: Dict[str, Any] = {"id": action.id, "kind": action.kind}
+    final_text = ""
+    quality = 1.0
+
+    if action.kind == "comment":
+        body = action.body_adf
+        if body is None:
+            suggestion = lookup_suggestion(issue_key, action.id)
+            body = suggestion.get("body_adf") if suggestion else None
+        if body is None:
+            raise HTTPException(400, "Missing body_adf for comment action")
+        adapter.add_comment(issue_key, body)
+        final_text = adf_to_plain_text(body)
+        draft_text = LEDGER.get(issue_key, {}).get("draft_text", "")
+        quality = compute_quality(draft_text, final_text)
+    elif action.kind == "transition":
+        transition_id = _resolve_transition_id(issue_key, action)
+        adapter.transition_issue(issue_key, transition_id)
+        applied_detail["transitionId"] = transition_id
+    elif action.kind == "set-labels":
+        labels, mode = _resolve_labels(issue_key, action)
+        try:
+            issue_payload = adapter.get_issue(issue_key)
+        except Exception as exc:
+            raise HTTPException(502, f"Failed to load issue {issue_key}: {exc}") from exc
+        existing = [
+            label
+            for label in issue_payload.get("fields", {}).get("labels") or []
+            if isinstance(label, str)
+        ]
+        if mode == "replace":
+            new_labels = list(dict.fromkeys(labels))
+        else:
+            new_labels = list(dict.fromkeys(existing + labels))
+        adapter.update_issue_fields(issue_key, {"labels": new_labels})
+        applied_detail["labels"] = new_labels
+        applied_detail["mode"] = mode
+    elif action.kind == "link":
+        raise HTTPException(400, "Link actions are not implemented yet")
+    else:  # pragma: no cover - guarded by ApplyAction model
+        raise HTTPException(400, f"Unsupported action kind {action.kind}")
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    credit_seconds = CREDIT_BY_KIND.get(action.kind, 30)
+    entry = LEDGER.setdefault(issue_key, {"issueKey": issue_key, "history": []})
+    history = entry.setdefault("history", [])
+    record = {
+        "action_id": action.id,
+        "kind": action.kind,
+        "applied_at": time.time(),
+        "apply_ms": elapsed_ms,
+        "credit_seconds": credit_seconds,
+    }
+    if action.kind == "comment":
+        record["quality"] = quality
+        record["text"] = final_text
+        entry["last_comment_quality"] = quality
+        entry["last_comment_text"] = final_text
+    history.append(record)
+    entry["total_credit_seconds"] = float(entry.get("total_credit_seconds", 0.0)) + credit_seconds
+    entry["applications"] = int(entry.get("applications", 0)) + 1
+    entry["last_apply_at"] = record["applied_at"]
+    entry["last_action"] = record
+    record_tenant(issue_key, tenant)
+    return {
+        "ok": True,
+        "applied": applied_detail,
+        "credit": {"seconds": credit_seconds},
+        "ledger": entry,
+    }
+
+
+# -------- Ingest: create proposals --------
+@app.get("/v1/jira/ingest")
+def ingest(request: Request, issueKey: str = Query(..., alias="issueKey")):
+    tenant = ensure_authorized(request)
+    try:
+        issue_payload = adapter.get_issue(issueKey)
+    except Exception as exc:
+        raise HTTPException(502, f"Failed to load issue {issueKey}: {exc}") from exc
+    return ingest_issue(issueKey, issue_payload, tenant=tenant)
+
+
+# -------- Apply: execute selected action --------
+@app.post("/v1/jira/apply")
+def apply(request: Request, payload: ApplyIn):
+    tenant = ensure_authorized(request)
+    idem_key = request.headers.get("idempotency-key")
+    if not idem_key:
+        raise HTTPException(400, "Missing Idempotency-Key")
+    if idem_key in APPLY_RESULTS:
+        return APPLY_RESULTS[idem_key]
+    result = perform_apply(payload.issueKey, payload.action, tenant)
+    APPLY_RESULTS[idem_key] = result
+    return result
 
 
 # -------- Ledger read --------
-@app.get("/v1/ledger/{issue_key}")
-def get_ledger(issue_key: str):
-    return LEDGER.get(issue_key, {})
+@app.get("/v1/ledger")
+def get_ledger(issueKey: str = Query(..., alias="issueKey")):
+    return LEDGER.get(issueKey, {"issueKey": issueKey, "history": []})
 
 
 # -------- Tiny UI --------
 @app.get("/ui", response_class=HTMLResponse)
 def ui():
     rows = []
-    for k, v in LEDGER.items():
-        ds = float(v.get("delta_seconds", 0.0))
-        base = int(float(v.get("baseline_seconds", 120)))
-        qual = v.get("quality", 1.0)
-        cred = v.get("credit", 0.0)
+    for key, entry in sorted(LEDGER.items()):
+        total = entry.get("total_credit_seconds", 0.0)
+        last = entry.get("last_action", {})
         rows.append(
-            f"<tr><td>{k}</td><td>{ds:.1f}s/{base}s</td><td>{qual:.2f}</td><td>{cred:.2f}</td></tr>"
+            "<tr>"
+            f"<td>{key}</td>"
+            f"<td>{total:.0f}s</td>"
+            f"<td>{last.get('kind', '-')}</td>"
+            f"<td>{last.get('apply_ms', 0)} ms</td>"
+            "</tr>"
         )
     body = f"""
     <html><body>
       <h2>Digital Spiral — Ledger</h2>
       <table border=1 cellpadding=6>
-        <tr><th>Issue</th><th>ΔT / Baseline</th><th>Quality</th><th>Credit</th></tr>
+        <tr><th>Issue</th><th>Credit</th><th>Last action</th><th>Latency</th></tr>
         {''.join(rows)}
       </table>
     </body></html>

@@ -1,39 +1,25 @@
 modules:
-  jira:issueGlance:
-    - key: ds-issue-glance
-      title: Digital Spiral
-      icon: https://developer.atlassian.com/platform/forge/images/icons/issue-glance-icon.svg
-      render: native
-      resolver:
-        function: glance-resolver
-
   jira:issuePanel:
     - key: ds-issue-panel
       title: Digital Spiral
+      icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      render: native
       resolver:
-        function: panel-resolver
-      viewportSize: medium
-
-  jira:issueAction:
-    - key: ds-apply-action
-      title: Apply suggestions
-      resolver:
-        function: apply-resolver
+        function: panel-run
 
   jira:projectSettingsPage:
     - key: ds-settings
       title: Digital Spiral Settings
+      render: native
       resolver:
-        function: settings-resolver
+        function: settings-run
 
 function:
-  - key: glance-resolver
-    handler: src/glance.run
-  - key: panel-resolver
+  - key: panel-run
     handler: src/panel.run
-  - key: apply-resolver
+  - key: apply-run
     handler: src/apply.run
-  - key: settings-resolver
+  - key: settings-run
     handler: src/settings.run
 
 permissions:
@@ -41,19 +27,13 @@ permissions:
     - read:jira-work
     - write:jira-work
     - read:jira-user
-    - read:issue-details:jira
-    - write:issue:jira
-    - manage:issue-link:jira
-    - read:comment:jira
-    - write:comment:jira
+    - manage:jira-project
   external:
     fetch:
       backend:
-        - '*.ngrok.io'
-        - '*.yourdomain.tld'
+        - ${ORCH_URL}
+
 app:
+  id: ari:cloud:ecosystem::app/00000000-0000-0000-0000-000000000000
   runtime:
     snapshots: false
-
-resources:
-  - key: DS_ORCH_URL

@@ -45,6 +45,7 @@ services:
       - JIRA_BASE_URL=http://mock-jira:9000
       - JIRA_TOKEN=mock-token
       - WEBHOOK_SECRET=dev-secret
+      - ORCH_SECRET=forge-dev-secret
       - LEDGER_BACKEND=memory
       - SIGNATURE_VERSION=2
       - ORCHESTRATOR_BASE_URL=http://orchestrator:7010
