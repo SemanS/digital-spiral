@@ -94,6 +94,7 @@ def orchestrator_test_app(monkeypatch: pytest.MonkeyPatch):
     module.SUGGESTIONS.clear()
     module.APPLY_RESULTS.clear()
     module.APPLY_FINGERPRINTS.clear()
+    module.PII_VAULT.clear()
     with TestClient(module.app) as client:
         yield client, module, adapter
     module.adapter = original_adapter
@@ -101,6 +102,7 @@ def orchestrator_test_app(monkeypatch: pytest.MonkeyPatch):
     module.SUGGESTIONS.clear()
     module.APPLY_RESULTS.clear()
     module.APPLY_FINGERPRINTS.clear()
+    module.PII_VAULT.clear()
     module.credit.reset_ledger(ledger_path, truncate=True)
 
 
@@ -157,6 +159,51 @@ def test_ingest_returns_proposals(orchestrator_test_app):
     ledger_entry = module.LEDGER["SUP-1"]
     assert ledger_entry["estimated_savings"]["seconds"] == payload["estimated_savings"]["seconds"]
     assert payload["estimated_savings"]["seconds"] == expected_total
+    analysis = payload["analysis"]
+    assert analysis["intent"]["label"]
+    assert analysis["complexity"]["level"] in {"low", "medium", "high"}
+    assert analysis["subtasks"]
+    assert all(item["status"] == "suggested" for item in analysis["subtasks"])
+    assert analysis["suggested_steps"]["knowledge_base_queries"]
+    assert analysis["notifications"]
+    assert ledger_entry["ticket"]["initial_body"] == analysis["initial_body"]
+    assert module.PII_VAULT["SUP-1"] == []
+
+
+def test_ingest_redacts_pii_and_records_vault(orchestrator_test_app):
+    client, module, adapter = orchestrator_test_app
+    adapter.issue_payloads["SUP-PII"] = {
+        "key": "SUP-PII",
+        "fields": {
+            "summary": "Platobný problém zákazníka",
+            "labels": [],
+            "description": (
+                "Zákazník: john.doe@example.com, telefón +421 987 654 321. "
+                "Číslo karty 4111 1111 1111 1111, IBAN GB82 WEST 1234 5698 7654 32, "
+                "Adresa 221B Baker Street London."
+            ),
+        },
+    }
+    headers = forge_headers(module.FORGE_SHARED_SECRET, b"")
+    response = client.get(
+        "/v1/jira/ingest",
+        params={"issueKey": "SUP-PII"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    analysis = payload["analysis"]
+    initial_body = analysis["initial_body"]
+    assert "john.doe@example.com" not in initial_body
+    assert "<REDACTED_EMAIL" in initial_body
+    assert "4111" not in initial_body
+    vault = module.PII_VAULT["SUP-PII"]
+    assert vault
+    types = {item["type"] for item in vault}
+    assert {"email", "phone", "card", "iban", "address"}.issubset(types)
+    assert all("hash" in item and item["hash"] for item in vault)
+    assert analysis["pii"]["count"] == len(vault)
+    assert analysis["initial_body_source"] in {"description", "comment", "summary"}
 
 
 def test_ingest_rejects_invalid_signature(orchestrator_test_app):

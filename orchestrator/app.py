@@ -6,10 +6,11 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Literal, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Literal, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
@@ -112,6 +113,7 @@ LEDGER: dict[str, Dict[str, Any]] = {}  # key -> metrics
 SUGGESTIONS: dict[str, Dict[str, Any]] = {}
 APPLY_RESULTS: dict[str, Dict[str, Any]] = {}
 APPLY_FINGERPRINTS: dict[str, str] = {}
+PII_VAULT: dict[str, List[Dict[str, Any]]] = {}
 
 DEFAULT_ESTIMATED_SAVINGS_SECONDS = int(os.getenv("DEFAULT_ESTIMATED_SAVINGS", "180"))
 
@@ -442,6 +444,464 @@ def adf_to_plain_text(node: Any) -> str:
     return ""
 
 
+PII_PLACEHOLDERS = {
+    "email": "<REDACTED_EMAIL>",
+    "phone": "<REDACTED_PHONE>",
+    "card": "<REDACTED_CARD>",
+    "iban": "<REDACTED_IBAN>",
+    "address": "<REDACTED_ADDRESS>",
+}
+
+_EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+_PHONE_PATTERN = re.compile(r"\+?\d[\d\s().-]{7,}\d")
+_CARD_PATTERN = re.compile(r"(?:\d[ -]?){13,19}")
+_IBAN_PATTERN = re.compile(r"\b[A-Z]{2}\d{2}(?:[\s-]?[A-Z0-9]{2,4}){3,}\b")
+_ADDRESS_PATTERN = re.compile(
+    r"(?:\b[A-Za-zÁ-Žá-ž]+\.?,?\s+)?\b\d{1,4}[A-Za-z]?\s+[A-Za-zÁ-Žá-ž0-9'.-]+(?:\s+(?:Street|St\\.?|Avenue|Ave\\.?|Road|Rd\\.?|Boulevard|Blvd\\.?|Lane|Ln\\.?|Drive|Dr\\.?|Court|Ct\\.?|Square|Sq\\.?|ulica|ul\\.?|námestie|nám\\.?|cesta|trieda))[^\n]*",
+    re.IGNORECASE,
+)
+
+
+def _is_probable_phone(value: str) -> bool:
+    digits = re.sub(r"\D", "", value)
+    return 9 <= len(digits) <= 15
+
+
+def _is_probable_card(value: str) -> bool:
+    digits = [int(ch) for ch in value if ch.isdigit()]
+    if len(digits) < 13 or len(digits) > 19:
+        return False
+    total = 0
+    parity = len(digits) % 2
+    for index, digit in enumerate(digits):
+        if index % 2 == parity:
+            doubled = digit * 2
+            if doubled > 9:
+                doubled -= 9
+            total += doubled
+        else:
+            total += digit
+    return total % 10 == 0
+
+
+def _is_valid_iban(value: str) -> bool:
+    compact = re.sub(r"\s+", "", value).upper()
+    if len(compact) < 15 or len(compact) > 34:
+        return False
+    if not compact[:2].isalpha() or not compact[2:4].isdigit():
+        return False
+    rearranged = compact[4:] + compact[:4]
+    translated = []
+    for char in rearranged:
+        if char.isdigit():
+            translated.append(char)
+        elif char.isalpha():
+            translated.append(str(ord(char) - 55))
+        else:
+            return False
+    remainder = 0
+    for char in "".join(translated):
+        remainder = (remainder * 10 + int(char)) % 97
+    return remainder == 1
+
+
+_PII_PATTERNS: Tuple[Tuple[str, re.Pattern[str], Optional[Callable[[str], bool]]], ...] = (
+    ("email", _EMAIL_PATTERN, None),
+    ("card", _CARD_PATTERN, _is_probable_card),
+    ("iban", _IBAN_PATTERN, _is_valid_iban),
+    ("phone", _PHONE_PATTERN, _is_probable_phone),
+    ("address", _ADDRESS_PATTERN, None),
+)
+
+
+def _as_plain_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, dict)):
+        return adf_to_plain_text(value)
+    return str(value)
+
+
+def _merge_text_parts(parts: Iterable[str]) -> str:
+    seen: set[str] = set()
+    ordered: List[str] = []
+    for part in parts:
+        if not part:
+            continue
+        candidate = part.strip()
+        if not candidate:
+            continue
+        lower = candidate.lower()
+        if lower in seen:
+            continue
+        seen.add(lower)
+        ordered.append(candidate)
+    return "\n\n".join(ordered)
+
+
+def redact_pii(text: str) -> Tuple[str, List[Dict[str, Any]]]:
+    if not text:
+        return "", []
+    vault: List[Dict[str, Any]] = []
+    counters = {key: 0 for key in PII_PLACEHOLDERS}
+    redacted = text
+
+    def apply_pattern(pattern: re.Pattern[str], category: str, validator: Optional[Callable[[str], bool]]) -> None:
+        nonlocal redacted
+
+        def _replacement(match: re.Match[str]) -> str:
+            value = match.group(0)
+            if validator and not validator(value):
+                return value
+            for existing in vault:
+                if existing["type"] == category and existing["value"] == value:
+                    return existing["placeholder"]
+            counters[category] += 1
+            base = PII_PLACEHOLDERS[category]
+            if base.endswith(">"):
+                placeholder = f"{base[:-1]}_{counters[category]}>"
+            else:
+                placeholder = f"{base}_{counters[category]}"
+            vault.append(
+                {
+                    "type": category,
+                    "value": value,
+                    "hash": hashlib.sha256(value.encode("utf-8")).hexdigest(),
+                    "placeholder": placeholder,
+                    "detected_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            return placeholder
+
+        redacted = pattern.sub(_replacement, redacted)
+
+    for category, pattern, validator in _PII_PATTERNS:
+        apply_pattern(pattern, category, validator)
+
+    return redacted, vault
+
+
+_INTENT_KEYWORDS: Dict[str, List[str]] = {
+    "bug_report": [
+        "bug",
+        "error",
+        "crash",
+        "exception",
+        "fail",
+        "problem",
+        "stack trace",
+        "traceback",
+        "nefunguje",
+        "nejde",
+    ],
+    "incident": [
+        "outage",
+        "incident",
+        "impact",
+        "downtime",
+        "production",
+        "critical",
+        "p0",
+        "p1",
+    ],
+    "access_request": [
+        "access",
+        "permission",
+        "login",
+        "account",
+        "pristup",
+        "role",
+        "credentials",
+    ],
+    "billing": [
+        "invoice",
+        "billing",
+        "payment",
+        "refund",
+        "charge",
+        "platba",
+        "faktura",
+    ],
+    "question": [
+        "how",
+        "can i",
+        "could you",
+        "where",
+        "ako",
+        "kde",
+        "?",
+    ],
+    "feedback": [
+        "feature",
+        "improvement",
+        "enhancement",
+        "suggestion",
+        "feedback",
+        "navrh",
+    ],
+}
+
+_DEFAULT_INTENT = "general_support"
+_URGENCY_MARKERS = {"urgent", "asap", "critical", "severe", "blokuje", "blocker"}
+
+
+def classify_intent(summary: str, body: str) -> Dict[str, Any]:
+    text = f"{summary}\n{body}".lower()
+    matches: Dict[str, List[str]] = {}
+    for label, keywords in _INTENT_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword == "?":
+                if "?" in text:
+                    matches.setdefault(label, []).append("question_mark")
+                continue
+            if keyword in text:
+                matches.setdefault(label, []).append(keyword)
+    if matches:
+        label, evidence = max(matches.items(), key=lambda item: len(item[1]))
+        total = sum(len(values) for values in matches.values())
+        confidence = len(evidence) / total if total else 1.0
+    else:
+        label = _DEFAULT_INTENT
+        evidence = []
+        confidence = 0.2
+    return {
+        "label": label,
+        "confidence": round(min(max(confidence, 0.05), 1.0), 2),
+        "evidence": evidence,
+    }
+
+
+def estimate_complexity(summary: str, body: str, event_type: Optional[str] = None) -> Dict[str, Any]:
+    text = f"{summary}\n{body}"
+    normalized = text.lower()
+    word_count = len(re.findall(r"\w+", text))
+    question_count = normalized.count("?")
+    newline_count = text.count("\n")
+    complexity_score = 0
+    if word_count > 400:
+        complexity_score += 3
+    elif word_count > 220:
+        complexity_score += 2
+    elif word_count > 120:
+        complexity_score += 1
+    if any(marker in normalized for marker in _URGENCY_MARKERS):
+        complexity_score += 2
+    if question_count >= 2:
+        complexity_score += 1
+    if newline_count >= 5:
+        complexity_score += 1
+    if any(term in normalized for term in ["stacktrace", "traceback", "error code", "sqlstate", "exception"]):
+        complexity_score += 1
+    if event_type and "message.added" in event_type:
+        complexity_score += 1
+    unique_tokens = {token for token in re.findall(r"[A-Za-zÁ-Žá-ž]{3,}", normalized)}
+    if len(unique_tokens) > 120:
+        complexity_score += 1
+    if word_count < 40:
+        complexity_score = max(complexity_score - 1, 0)
+    if complexity_score >= 5:
+        level = "high"
+    elif complexity_score >= 3:
+        level = "medium"
+    else:
+        level = "low"
+    return {
+        "level": level,
+        "score": complexity_score,
+        "word_count": word_count,
+        "question_count": question_count,
+    }
+
+
+def _subtask_id(issue_key: str, suffix: str) -> str:
+    base = issue_key.lower().replace("-", "_")
+    digest = hashlib.sha1(f"{issue_key}:{suffix}".encode("utf-8")).hexdigest()[:8]
+    return f"{base}_{suffix}_{digest}"
+
+
+def generate_subtasks(
+    issue_key: str,
+    intent_label: str,
+    complexity_level: str,
+    summary: str,
+    body: str,
+) -> List[Dict[str, Any]]:
+    subtasks: List[Dict[str, Any]] = []
+    subtasks.append(
+        {
+            "id": _subtask_id(issue_key, "triage"),
+            "title": "Prečítať ticket a určiť prioritu",
+            "description": "Preskúmaj obsah a potvrď prioritu podľa dostupných informácií.",
+            "status": "suggested",
+            "owner": "orchestrator.triage",
+            "intent": intent_label,
+        }
+    )
+    lowered = body.lower()
+    if intent_label in {"bug_report", "incident"}:
+        subtasks.append(
+            {
+                "id": _subtask_id(issue_key, "diagnostics"),
+                "title": "Získať diagnostické údaje",
+                "description": "Over posledné logy, release a kroky na reprodukciu problému.",
+                "status": "suggested",
+                "owner": "agent.diagnostics",
+            }
+        )
+        subtasks.append(
+            {
+                "id": _subtask_id(issue_key, "kb"),
+                "title": "Skontrolovať známe incidenty",
+                "description": "Porovnaj ticket s existujúcimi incidentmi alebo výpadkami v KB.",
+                "status": "suggested",
+                "owner": "agent.kb",
+            }
+        )
+    elif intent_label == "access_request":
+        subtasks.append(
+            {
+                "id": _subtask_id(issue_key, "access"),
+                "title": "Overiť oprávnenia používateľa",
+                "description": "Skontroluj v IAM systéme stav účtu a požadované roly.",
+                "status": "suggested",
+                "owner": "agent.iam",
+            }
+        )
+    elif intent_label == "billing":
+        subtasks.append(
+            {
+                "id": _subtask_id(issue_key, "billing"),
+                "title": "Overiť fakturáciu",
+                "description": "Vyhľadaj transakcie a porovnaj s históriou platieb zákazníka.",
+                "status": "suggested",
+                "owner": "agent.billing",
+            }
+        )
+    else:
+        subtasks.append(
+            {
+                "id": _subtask_id(issue_key, "research"),
+                "title": "Nájsť relevantné znalosti",
+                "description": "Vyhľadaj podobné otázky alebo návody v znalostnej báze.",
+                "status": "suggested",
+                "owner": "agent.research",
+            }
+        )
+    subtasks.append(
+        {
+            "id": _subtask_id(issue_key, "draft"),
+            "title": "Pripraviť návrh odpovede",
+            "description": "Zhrň zistenia a priprav odpoveď pre zákazníka na schválenie.",
+            "status": "suggested",
+            "owner": "agent.response",
+        }
+    )
+    follow_up_needed = "log" not in lowered and intent_label in {"bug_report", "incident"}
+    if follow_up_needed or intent_label in {"question", "general_support"}:
+        subtasks.append(
+            {
+                "id": _subtask_id(issue_key, "questions"),
+                "title": "Navrhnúť doplňujúce otázky",
+                "description": "Priprav otázky pre zákazníka, ktoré pomôžu urýchliť riešenie.",
+                "status": "suggested",
+                "owner": "agent.engagement",
+            }
+        )
+    if complexity_level == "high":
+        subtasks.append(
+            {
+                "id": _subtask_id(issue_key, "escalation"),
+                "title": "Pripraviť eskaláciu",
+                "description": "Zhromaždi všetky dôležité fakty pre prípadnú eskaláciu na L2/L3.",
+                "status": "suggested",
+                "owner": "agent.escalation",
+            }
+        )
+    return subtasks
+
+
+def generate_suggested_steps(
+    intent_label: str,
+    summary: str,
+    body: str,
+    complexity_level: str,
+) -> Dict[str, Any]:
+    keywords = [token for token in re.findall(r"[A-Za-zÁ-Žá-ž0-9]{3,}", summary)][:6]
+    base_query = " ".join(keywords) or summary
+    if intent_label == "bug_report":
+        queries = [
+            f"Incident - {base_query}",
+            "Troubleshooting guide for reported error",
+        ]
+    elif intent_label == "incident":
+        queries = [
+            f"Outage status {base_query}",
+            "Incident runbook",
+        ]
+    elif intent_label == "access_request":
+        queries = [
+            f"Access provisioning {base_query}",
+            "IAM onboarding checklist",
+        ]
+    elif intent_label == "billing":
+        queries = [
+            f"Billing discrepancy {base_query}",
+            "Refund policy",
+        ]
+    else:
+        queries = [base_query, "Knowledge base search"]
+    seen_queries: set[str] = set()
+    deduped_queries: List[str] = []
+    for query in queries:
+        candidate = query.strip()
+        if not candidate:
+            continue
+        lowered = candidate.lower()
+        if lowered in seen_queries:
+            continue
+        seen_queries.add(lowered)
+        deduped_queries.append(candidate)
+    lowered_body = body.lower()
+    follow_up_questions: List[str] = []
+    if intent_label in {"bug_report", "incident"} and "log" not in lowered_body:
+        follow_up_questions.append("Môžete prosím pripojiť relevantné logy alebo screenshot problému?")
+    if intent_label == "access_request" and "username" not in lowered_body:
+        follow_up_questions.append("Potvrdíte prihlasovacie meno a požadovanú rolu?")
+    if intent_label == "billing" and "invoice" not in lowered_body:
+        follow_up_questions.append("Pošlite číslo faktúry alebo obdobie fakturácie, ktorého sa problém týka.")
+    if complexity_level == "high":
+        follow_up_questions.append("Existuje termín alebo obchodný dopad, o ktorom by sme mali vedieť?")
+    draft_response = (
+        "Ahoj, ďakujeme za podnet. Identifikovali sme ho ako "
+        f"{intent_label.replace('_', ' ')} a pracujeme na navrhnutých krokoch. "
+        "Dáme vedieť hneď, ako budeme mať ďalšie informácie."
+    )
+    if intent_label in {"bug_report", "incident"}:
+        draft_response += " Medzitým nám prosím pošlite všetky nové pozorovania."  # type: ignore[operator]
+    return {
+        "knowledge_base_queries": deduped_queries,
+        "draft_response": draft_response,
+        "follow_up_questions": follow_up_questions,
+    }
+
+
+def build_notification(
+    issue_key: str,
+    intent: Dict[str, Any],
+    complexity: Dict[str, Any],
+    subtasks: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    return {
+        "channel": "ui.sidebar",
+        "event": "suggestions.updated",
+        "issueKey": issue_key,
+        "intent": intent.get("label"),
+        "complexity": complexity.get("level"),
+        "subtaskCount": len(subtasks),
+        "timestamp": time.time(),
+    }
+
+
 def compute_quality(draft_text: str, final_text: str) -> float:
     if not draft_text:
         return 1.0
@@ -484,23 +944,105 @@ async def jira_webhook(request: Request):
     except Exception as exc:  # pragma: no cover - network failures are logged only
         logger.error("Failed to fetch issue %s from Jira: %s", key, exc)
         raise HTTPException(502, "Failed to fetch issue payload") from exc
-    response = ingest_issue(key, issue_payload)
+    response = ingest_issue(key, issue_payload, event=payload)
     return {"ok": True, "proposals": response}
 
 
-def ingest_issue(issue_key: str, issue_payload: Dict[str, Any], tenant: Optional[str] = None) -> Dict[str, Any]:
+def _resolve_event_type(event: Optional[Mapping[str, Any]]) -> str:
+    if not event:
+        return "ticket.inspect"
+    for key in ("webhookEvent", "event", "notificationEvent", "issue_event_type_name"):
+        value = event.get(key) if isinstance(event, Mapping) else None
+        if value:
+            return str(value)
+    if isinstance(event, Mapping) and event.get("comment"):
+        return "message.added"
+    if isinstance(event, Mapping) and event.get("issue"):
+        return "ticket.updated"
+    return "ticket.event"
+
+
+def _extract_comment_text(event: Optional[Mapping[str, Any]]) -> str:
+    if not event or not isinstance(event, Mapping):
+        return ""
+    comment = event.get("comment")
+    if isinstance(comment, Mapping):
+        for key in ("body", "bodyText", "renderedBody"):
+            if key in comment:
+                return _as_plain_text(comment.get(key))
+    return ""
+
+
+def ingest_issue(
+    issue_key: str,
+    issue_payload: Dict[str, Any],
+    tenant: Optional[str] = None,
+    *,
+    event: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
     fields = issue_payload.get("fields", {})
     summary = str(fields.get("summary") or "(no summary)")
+    event_type = _resolve_event_type(event)
+    comment_text_raw = _extract_comment_text(event)
+    description_text = _as_plain_text(fields.get("description"))
+    description_text = description_text or _as_plain_text(fields.get("descriptionText"))
+    summary_text = summary
+    body_parts = []
+    initial_source = "summary"
+    if comment_text_raw:
+        body_parts.append(comment_text_raw)
+        initial_source = "comment"
+    if description_text:
+        body_parts.append(description_text)
+        if initial_source == "summary":
+            initial_source = "description"
+    if summary_text:
+        body_parts.append(summary_text)
+    raw_body = _merge_text_parts(body_parts)
+    redacted_body, pii_hits = redact_pii(raw_body)
+    PII_VAULT[issue_key] = pii_hits
+    intent_info = classify_intent(summary, redacted_body)
+    complexity_info = estimate_complexity(summary, redacted_body, event_type)
+    subtasks = generate_subtasks(
+        issue_key,
+        intent_info["label"],
+        complexity_info["level"],
+        summary,
+        redacted_body,
+    )
+    suggested_steps = generate_suggested_steps(
+        intent_info["label"], summary, redacted_body, complexity_info["level"]
+    )
+    pii_summary = {
+        "count": len(pii_hits),
+        "types": sorted({entry["type"] for entry in pii_hits}),
+    }
+    analysis = {
+        "intent": intent_info,
+        "complexity": complexity_info,
+        "initial_body": redacted_body,
+        "initial_body_source": initial_source,
+        "pii": pii_summary,
+        "subtasks": subtasks,
+        "suggested_steps": suggested_steps,
+        "event": event_type,
+    }
+    notification = build_notification(issue_key, intent_info, complexity_info, subtasks)
+    analysis["notifications"] = [notification]
+
+    follow_up = suggested_steps.get("follow_up_questions") or []
+    follow_up_line = follow_up[0] if follow_up else "Prosím doplň posledné logy alebo ďalšie detaily, aby sme vedeli pokračovať."
     comment_text = (
-        f"Ahoj! V tickete {issue_key} sa píše: \"{summary}\". "
-        "Prosím doplň posledné logy a verziu aplikácie, aby sme vedeli pokračovať."
+        f"Ahoj! Pracujeme na tickete {issue_key}. "
+        f"Identifikovali sme intent {intent_info['label'].replace('_', ' ')} "
+        f"(komplexita {complexity_info['level']}). {follow_up_line}"
     )
     proposals: List[Dict[str, Any]] = [
         {
             "id": "add-comment-1",
             "kind": "comment",
             "body_adf": adf_from_text(comment_text),
-            "explain": "Navrhovaná odpoveď pre zákazníka na základe summary ticketu.",
+            "explain": "Automaticky navrhnutá odpoveď vrátane ďalších krokov.",
         }
     ]
 
@@ -535,12 +1077,32 @@ def ingest_issue(issue_key: str, issue_payload: Dict[str, Any], tenant: Optional
         proposal["estimatedSeconds"] = metrics_module.estimate_seconds(proposal.get("kind", ""))
     estimated_total = sum(int(proposal.get("estimatedSeconds") or 0) for proposal in proposals)
     estimated = {"seconds": estimated_total or DEFAULT_ESTIMATED_SAVINGS_SECONDS}
-    response = {"issueKey": issue_key, "proposals": proposals, "estimated_savings": estimated}
+    response = {
+        "issueKey": issue_key,
+        "proposals": proposals,
+        "estimated_savings": estimated,
+        "analysis": analysis,
+    }
     SUGGESTIONS[issue_key] = response
     entry = LEDGER.setdefault(issue_key, {"issueKey": issue_key, "history": []})
     entry["last_ingest_at"] = time.time()
     entry["estimated_savings"] = estimated
     entry["draft_text"] = comment_text
+    entry["ticket"] = {
+        "initial_body": redacted_body,
+        "initial_body_source": initial_source,
+        "intent": intent_info,
+        "complexity": complexity_info,
+        "subtasks": subtasks,
+        "suggested_steps": suggested_steps,
+        "pii_summary": pii_summary,
+        "analysis_event": event_type,
+        "analysis_ts": datetime.now(timezone.utc).isoformat(),
+        "tenant": tenant,
+    }
+    entry.setdefault("notifications", []).append(notification)
+    entry["last_notification"] = notification
+    entry["last_analysis"] = analysis
     record_tenant(issue_key, tenant)
     return response
 
