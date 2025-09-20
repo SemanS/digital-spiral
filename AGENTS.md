@@ -27,6 +27,11 @@ mcp_jira/          # MCP integration layer (server facade + tools registry)
   server.py        # get_tool, invoke_tool, list_tools
   tools.py         # t_jira_* and other MCP tool callables; TOOL_REGISTRY
 
+📘 Detailné popisy komponentov nájdeš v:
+- `mockjira/README.md`
+- `mcp_jira/README.md`
+- `clients/python/README.md`
+
 clients/python/    # Python JiraAdapter (REST wrapper) + exceptions
   jira_adapter.py  # REST calls + retry + API groups (platform/agile/jsm)
   exceptions.py    # JiraError hierarchy
@@ -94,6 +99,24 @@ jsm.create_request       agile.list_sprints
 ### 4.3 Facade pre agentov
 
 Použi `mcp_jira.server.invoke_tool(name, args)` alebo `get_tool(name)(args)`. Na introspekciu `list_tools()` vráti názvy a `__doc__` popisy.
+
+### 4.4 Pripojenie MCP ↔️ Jira
+
+1. Skontroluj, že prostredie má nastavené premenné `JIRA_BASE_URL`, `JIRA_TOKEN` a voliteľne `JIRA_TIMEOUT`.
+2. Uisti sa, že mock server (alebo produkčná Jira) beží a je dostupná na zvolenej URL.
+3. Inicializuj MCP facade, napríklad:
+   ```python
+   from mcp_jira.server import list_tools, invoke_tool
+
+   print(list_tools())
+   issue = invoke_tool("jira.create_issue", {
+       "project_key": "SUP",
+       "issue_type_id": "10003",
+       "summary": "Ticket from MCP agent"
+   })
+   print(issue["key"])
+   ```
+4. Pri potrebe OAuth pozri `mcp_jira/oauth.py`. Detailný onboarding je v `mcp_jira/README.md`.
 
 ---
 
