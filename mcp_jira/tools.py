@@ -18,6 +18,10 @@ __all__ = [
     "t_jira_add_comment",
     "t_jsm_create_request",
     "t_agile_list_sprints",
+    # new tools
+    "t_jira_list_projects",
+    "t_jira_list_issue_types",
+    "t_jira_create_issue_by_type_name",
     "TOOL_REGISTRY",
 ]
 
@@ -92,6 +96,50 @@ def t_agile_list_sprints(args: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+# --- Additional convenience tools for real Jira via MCP ---
+
+def t_jira_list_projects(args: Dict[str, Any]) -> Dict[str, Any]:
+    """List projects available to the current credentials."""
+    projects = ADAPTER._call("GET", "/rest/api/3/project")
+    return {"projects": projects}
+
+
+def t_jira_list_issue_types(args: Dict[str, Any]) -> Dict[str, Any]:
+    """List issue types in the current site (name, id, subtask)."""
+    types = ADAPTER._call("GET", "/rest/api/3/issuetype")
+    return {"issuetypes": types}
+
+
+def _resolve_issue_type_id_by_name(name: str) -> str:
+    """Resolve an issue type ID by display name. Supports 'Name@id' hint."""
+    raw = name.strip()
+    if "@" in raw:
+        base, id_hint = raw.split("@", 1)
+        return id_hint.strip() or base.strip()
+    types = ADAPTER._call("GET", "/rest/api/3/issuetype") or []
+    lowered = raw.lower()
+    # Prefer non-subtask match; fallback to any name match; finally first entry
+    candidates = [t for t in types if str(t.get("name", "")).lower() == lowered]
+    non_sub = next((t for t in candidates if not bool(t.get("subtask"))), None)
+    chosen = non_sub or (candidates[0] if candidates else (types[0] if types else None))
+    if not chosen or not chosen.get("id"):
+        raise RuntimeError(f"Cannot resolve issue type id for '{name}'")
+    return str(chosen["id"])
+
+
+def t_jira_create_issue_by_type_name(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Create issue resolving type by name (e.g., 'Task' or 'Task@10001')."""
+    type_name = args["issue_type_name"]
+    type_id = _resolve_issue_type_id_by_name(type_name)
+    return ADAPTER.create_issue(
+        args["project_key"],
+        type_id,
+        args["summary"],
+        args.get("description_adf"),
+        args.get("fields"),
+    )
+
+
 TOOL_REGISTRY: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "jira.create_issue": t_jira_create_issue,
     "jira.get_issue": t_jira_get_issue,
@@ -101,4 +149,8 @@ TOOL_REGISTRY: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "jira.add_comment": t_jira_add_comment,
     "jsm.create_request": t_jsm_create_request,
     "agile.list_sprints": t_agile_list_sprints,
+    # new entries
+    "jira.list_projects": t_jira_list_projects,
+    "jira.list_issue_types": t_jira_list_issue_types,
+    "jira.create_issue_by_type_name": t_jira_create_issue_by_type_name,
 }

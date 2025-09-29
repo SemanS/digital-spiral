@@ -41,12 +41,27 @@ def build_app() -> FastAPI:
         if payload is None:
             return
         previous = current_token.get("access_token")
-        if previous == payload.access_token:
+        if previous == getattr(payload, "access_token", None):
+            # Still ensure base_url is correct, even if token did not change
+            base_url = None
+            if getattr(payload, "cloud_id", None):
+                base_url = f"https://api.atlassian.com/ex/jira/{payload.cloud_id}"
+            elif getattr(payload, "resource_url", None):
+                base_url = payload.resource_url
+            if base_url:
+                os.environ["JIRA_BASE_URL"] = base_url
+                refresh_adapter()
             return
+        # Update token and base URL deterministically
         current_token["access_token"] = payload.access_token
         os.environ["JIRA_TOKEN"] = payload.access_token
-        if payload.resource_url:
-            os.environ.setdefault("JIRA_BASE_URL", payload.resource_url)
+        base_url = None
+        if getattr(payload, "cloud_id", None):
+            base_url = f"https://api.atlassian.com/ex/jira/{payload.cloud_id}"
+        elif getattr(payload, "resource_url", None):
+            base_url = payload.resource_url
+        if base_url:
+            os.environ["JIRA_BASE_URL"] = base_url
         refresh_adapter()
 
     def _ensure_runtime_token() -> None:

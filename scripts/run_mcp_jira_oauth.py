@@ -50,9 +50,36 @@ def ensure_py_path(env: dict[str, str]) -> None:
         env["PYTHONPATH"] = path_str
 
 
+def load_dotenv_into_env(env: dict[str, str]) -> None:
+    """Load KEY=VALUE pairs from .env in repo root into both env and os.environ."""
+    env_path = REPO_ROOT / ".env"
+    if not env_path.exists():
+        return
+    try:
+        with env_path.open("r", encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if not key:
+                    continue
+                env[key] = value
+                os.environ[key] = value
+    except Exception:
+        # don't fail hard if .env is malformed; continue with whatever we have
+        pass
+
+
 def spawn_bridge(log_level: str) -> subprocess.Popen[str]:
     cmd = BRIDGE_CMD + ["--log-level", log_level]
     env = os.environ.copy()
+    # Auto-load .env to make startup hands-free
+    load_dotenv_into_env(env)
     ensure_py_path(env)
     process = subprocess.Popen(
         cmd,

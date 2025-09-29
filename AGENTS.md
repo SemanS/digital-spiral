@@ -118,6 +118,25 @@ Použi `mcp_jira.server.invoke_tool(name, args)` alebo `get_tool(name)(args)`. N
    ```
 4. Pri potrebe OAuth pozri `mcp_jira/oauth.py`. Detailný onboarding je v `mcp_jira/README.md`.
 
+#### 4.5 MCP Jira OAuth – .env autoload
+
+`scripts/run_mcp_jira_oauth.py` automaticky načíta `.env` v koreňovom adresári repo a exportuje premenné do procesu bridge. Pre hands‑free štart stačí vytvoriť `.env`:
+
+```
+ATLASSIAN_CLIENT_ID="<client_id>"
+ATLASSIAN_CLIENT_SECRET="<client_secret>"
+ATLASSIAN_REDIRECT_URI="http://127.0.0.1:8055/oauth/callback"
+```
+
+Potom spustiť:
+
+```
+python scripts/run_mcp_jira_oauth.py --open --test
+```
+
+- Po autorizácii v prehliadači sa uloží token do `~/.config/mcp-jira/token.json`.
+- Bridge začne počúvať na `http://127.0.0.1:8055` a nástroje sú dostupné cez `/tools` a `/tools/invoke`.
+
 ---
 
 ## 5) API povrch mock servera
