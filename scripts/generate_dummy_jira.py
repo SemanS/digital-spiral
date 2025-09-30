@@ -7,9 +7,15 @@ import argparse
 import json
 import random
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
+
+# Python 3.10 compatibility
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -65,6 +71,13 @@ def _load_config(path: str | None) -> tuple[dict[str, object] | None, dict[str, 
         cfg_kwargs["handoff_probability"] = data["handoff_probability"]
     if "handoff_probability" in generator_cfg:
         cfg_kwargs["handoff_probability"] = generator_cfg["handoff_probability"]
+
+    # Check for support templates flag
+    if "use_support_templates" in data:
+        cfg_kwargs["use_support_templates"] = data["use_support_templates"]
+    if "use_support_templates" in generator_cfg:
+        cfg_kwargs["use_support_templates"] = generator_cfg["use_support_templates"]
+
     return None, cfg_kwargs
 
 
@@ -593,6 +606,9 @@ def main(argv: list[str] | None = None) -> None:
             ),
             assignee_churn_prob=float(
                 cfg_overrides.get("assignee_churn_prob", DEFAULT_CFG.assignee_churn_prob)
+            ),
+            use_support_templates=bool(
+                cfg_overrides.get("use_support_templates", DEFAULT_CFG.use_support_templates)
             ),
         )
         payload = generate_seed_json(cfg)

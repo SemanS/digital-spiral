@@ -6,7 +6,13 @@ import json
 import logging
 import uuid
 from collections import deque
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+# Python 3.10 compatibility
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 from fastapi import FastAPI, Request
 

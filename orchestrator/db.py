@@ -241,3 +241,11 @@ def clear_all(session: Session) -> None:
     session.query(AgentRecord).delete()
     session.query(Tenant).delete()
     session.flush()
+
+
+# Import Pulse models to register them with Base.metadata
+# This must be done after Base is defined
+try:
+    from . import pulse_models  # noqa: F401
+except ImportError:
+    pass  # Pulse models not yet available

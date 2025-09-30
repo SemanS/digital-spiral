@@ -1,6 +1,63 @@
+# Digital Spiral - AI Support Copilot
+
+**Intelligent automation platform for support teams** built on top of Jira Cloud.
+
+🎯 **[Product Overview](docs/AI_SUPPORT_COPILOT_PRODUCT.md)** | 🚀 **[Setup Guide](docs/AI_SUPPORT_COPILOT_SETUP.md)** | 🌐 **[Real Jira Setup](docs/REAL_JIRA_SETUP.md)**
+
+## What is this?
+
+This repository contains:
+
+1. **AI Support Copilot** - Production-ready SaaS platform for automating support workflows
+2. **Mock Jira Server** - Full-featured Jira Cloud REST API emulation for development
+3. **Orchestrator** - AI-powered ticket analysis and automation engine
+4. **Forge App** - Jira Cloud UI integration
+5. **MCP Bridge** - Model Context Protocol integration for AI agents
+
+## Quick Start
+
+### Option 1: Real Jira Cloud (Recommended)
+
+Connect to your actual Jira Cloud instance:
+
+```bash
+# 1. Create API token at: https://id.atlassian.com/manage-profile/security/api-tokens
+
+# 2. Run setup script
+./scripts/setup_real_jira.sh YOUR_API_TOKEN
+
+# 3. Open demo UI
+open demo-ui/real-jira.html
+```
+
+See **[Real Jira Setup Guide](docs/REAL_JIRA_SETUP.md)** for detailed instructions.
+
+### Option 2: Mock Jira (Development)
+
+Use local mock server for development:
+
+```bash
+# 1. Generate realistic support data (240 tickets, 8 agents, 6 months history)
+python scripts/generate_dummy_jira.py \
+  --config scripts/seed_profiles/ai_support_copilot.json \
+  --out artifacts/ai_support_copilot_seed.json
+
+# 2. Start all services
+docker compose up -d
+
+# 3. Access services
+# - Mock Jira API: http://localhost:9000/docs
+# - Orchestrator API: http://localhost:7010/docs
+# - Demo UI: open demo-ui/index.html
+```
+
+See **[Setup Guide](docs/AI_SUPPORT_COPILOT_SETUP.md)** for detailed instructions.
+
+---
+
 # Mock Jira Cloud Server
 
-This repository implements a stateful mock server that emulates the most used
+This repository also implements a stateful mock server that emulates the most used
 surfaces of the Jira Cloud REST APIs. It is meant for integration testing and
 local development where hitting the real Atlassian endpoints is impractical.
 

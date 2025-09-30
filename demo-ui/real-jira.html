@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Support Copilot - Real Jira Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f4f5f7;
+            color: #172b4d;
+        }
+        
+        .header {
+            background: #0052cc;
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+        
+        .header .subtitle {
+            font-size: 0.875rem;
+            opacity: 0.9;
+            margin-top: 0.25rem;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+        
+        .config-panel {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .config-panel h2 {
+            font-size: 1.125rem;
+            margin-bottom: 1rem;
+            color: #172b4d;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-group label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #5e6c84;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 2px solid #dfe1e6;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #0052cc;
+        }
+        
+        .btn {
+            background: #0052cc;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .btn:hover {
+            background: #0747a6;
+        }
+        
+        .btn:disabled {
+            background: #dfe1e6;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+        
+        .status.success {
+            background: #e3fcef;
+            color: #006644;
+        }
+        
+        .status.error {
+            background: #ffebe6;
+            color: #bf2600;
+        }
+        
+        .status.loading {
+            background: #deebff;
+            color: #0747a6;
+        }
+        
+        .issues-grid {
+            display: grid;
+            gap: 1rem;
+        }
+        
+        .issue-card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: box-shadow 0.2s;
+            cursor: pointer;
+        }
+        
+        .issue-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .issue-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 0.75rem;
+        }
+        
+        .issue-key {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #5e6c84;
+        }
+        
+        .issue-status {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .status-todo { background: #dfe1e6; color: #42526e; }
+        .status-inprogress { background: #deebff; color: #0747a6; }
+        .status-done { background: #e3fcef; color: #006644; }
+        
+        .issue-summary {
+            font-size: 1rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #172b4d;
+        }
+        
+        .issue-meta {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.75rem;
+            color: #5e6c84;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #5e6c84;
+        }
+        
+        .empty-state h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 AI Support Copilot</h1>
+        <div class="subtitle">Connected to Real Jira Cloud</div>
+    </div>
+    
+    <div class="container">
+        <div class="config-panel">
+            <h2>⚙️ Configuration</h2>
+            <div class="form-group">
+                <label for="proxyUrl">Proxy URL (run: python scripts/jira_proxy.py)</label>
+                <input type="text" id="proxyUrl" value="http://localhost:8080/proxy" placeholder="http://localhost:8080/proxy">
+            </div>
+            <div class="form-group">
+                <label for="jiraUrl">Jira Base URL</label>
+                <input type="text" id="jiraUrl" value="https://insight-bridge.atlassian.net" placeholder="https://your-domain.atlassian.net">
+            </div>
+            <div class="form-group">
+                <label for="apiToken">API Token</label>
+                <input type="password" id="apiToken" placeholder="Your Jira API token">
+            </div>
+            <div class="form-group">
+                <label for="email">Email (for Basic Auth)</label>
+                <input type="email" id="email" value="slavosmn@gmail.com" placeholder="your-email@example.com">
+            </div>
+            <button class="btn" onclick="loadIssues()">Load Issues</button>
+            <div id="status"></div>
+        </div>
+        
+        <div id="issuesContainer"></div>
+    </div>
+    
+    <script>
+        async function loadIssues() {
+            const proxyUrl = document.getElementById('proxyUrl').value;
+            const jiraUrl = document.getElementById('jiraUrl').value;
+            const apiToken = document.getElementById('apiToken').value;
+            const email = document.getElementById('email').value;
+            const statusEl = document.getElementById('status');
+            const containerEl = document.getElementById('issuesContainer');
+
+            if (!apiToken) {
+                statusEl.innerHTML = '<div class="status error">⚠️ Please enter your API token</div>';
+                return;
+            }
+
+            if (!email) {
+                statusEl.innerHTML = '<div class="status error">⚠️ Please enter your email</div>';
+                return;
+            }
+
+            statusEl.innerHTML = '<div class="status loading">🔄 Loading issues from Jira...</div>';
+            containerEl.innerHTML = '';
+
+            try {
+                // Use proxy to avoid CORS issues
+                const url = new URL(proxyUrl);
+                url.searchParams.set('jira_url', jiraUrl);
+                url.searchParams.set('path', '/rest/api/3/search/jql');  // New Jira Cloud API
+                // Add project filter to avoid "Unbounded JQL" error
+                url.searchParams.set('jql', 'project = SCRUM order by created DESC');
+                url.searchParams.set('maxResults', '50');
+                url.searchParams.set('fields', 'summary,status,assignee,priority,created,issuetype,project');
+
+                const response = await fetch(url.toString(), {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${apiToken}`,
+                        'X-Jira-Email': email,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                // New API returns different structure
+                const issues = data.issues || [];
+                const total = data.total || issues.length;
+                const isLast = data.isLast !== undefined ? data.isLast : true;
+
+                statusEl.innerHTML = `<div class="status success">✅ Loaded ${issues.length} issues${!isLast ? ' (more available)' : ''}</div>`;
+
+                if (issues.length === 0) {
+                    containerEl.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No issues found</h3>
+                            <p>Create some issues in your Jira or load dummy data</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const issuesHtml = issues.map(issue => {
+                    const status = issue.fields.status.name.toLowerCase().replace(/\s+/g, '');
+                    const statusClass = status.includes('progress') ? 'status-inprogress' : 
+                                       status.includes('done') ? 'status-done' : 'status-todo';
+                    
+                    const assignee = issue.fields.assignee ? 
+                        issue.fields.assignee.displayName : 'Unassigned';
+                    
+                    const priority = issue.fields.priority ? 
+                        issue.fields.priority.name : 'None';
+                    
+                    return `
+                        <div class="issue-card" onclick="openIssue('${issue.key}')">
+                            <div class="issue-header">
+                                <span class="issue-key">${issue.key}</span>
+                                <span class="issue-status ${statusClass}">${issue.fields.status.name}</span>
+                            </div>
+                            <div class="issue-summary">${issue.fields.summary}</div>
+                            <div class="issue-meta">
+                                <span>👤 ${assignee}</span>
+                                <span>🎯 ${priority}</span>
+                                <span>📅 ${new Date(issue.fields.created).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                containerEl.innerHTML = `<div class="issues-grid">${issuesHtml}</div>`;
+                
+            } catch (error) {
+                statusEl.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+                console.error('Error loading issues:', error);
+            }
+        }
+        
+        function openIssue(issueKey) {
+            const jiraUrl = document.getElementById('jiraUrl').value;
+            window.open(`${jiraUrl}/browse/${issueKey}`, '_blank');
+        }
+        
+        // Load issues on page load if token is saved
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedToken = localStorage.getItem('jiraApiToken');
+            if (savedToken) {
+                document.getElementById('apiToken').value = savedToken;
+            }
+        });
+        
+        // Save token to localStorage
+        document.getElementById('apiToken').addEventListener('change', (e) => {
+            localStorage.setItem('jiraApiToken', e.target.value);
+        });
+    </script>
+</body>
+</html>
+

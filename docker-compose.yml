@@ -35,9 +35,6 @@ services:
       timeout: 3s
       retries: 6
 
-volumes:
-  pgdata:
-
   mock-jira-seed:
     image: digital-spiral/mock-jira:dev
     container_name: mock-jira-seed
@@ -88,3 +85,6 @@ volumes:
       interval: 10s
       timeout: 3s
       retries: 6
+
+volumes:
+  pgdata:

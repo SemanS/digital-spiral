@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
+
+# Python 3.10 compatibility
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 AUDIT_LOG_PATH = Path(os.getenv("AUDIT_LOG_PATH", "artifacts/audit-log.jsonl"))
 RETENTION_DAYS = int(os.getenv("AUDIT_RETENTION_DAYS", "7"))

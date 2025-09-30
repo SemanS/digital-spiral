@@ -1,0 +1,63 @@
+{
+  "description": "AI Support Copilot - Comprehensive support ticket dataset with 6 months of history, realistic scenarios, and full ticket lifecycle",
+  "generator": {
+    "seed": 20250115,
+    "days": 180,
+    "software_projects": 1,
+    "servicedesk_projects": 1,
+    "issues_per_project": 240,
+    "boards_per_sw_project": 1,
+    "sprints_per_board": 12,
+    "sprint_length_days": 14,
+    "comments_per_issue_avg": 4.5,
+    "transition_rate": 0.85,
+    "link_probability": 0.1,
+    "assignee_churn_prob": 0.25,
+    "use_support_templates": true
+  },
+  "features": {
+    "support_team_size": 8,
+    "customer_accounts": 8,
+    "realistic_scenarios": true,
+    "full_ticket_lifecycle": true,
+    "comment_threads": true,
+    "reassignments": true,
+    "escalations": true,
+    "resolution_tracking": true,
+    "sprint_history": true,
+    "pii_examples": true
+  },
+  "scenarios": {
+    "bug_reports": 30,
+    "access_requests": 25,
+    "billing_issues": 20,
+    "incidents": 15,
+    "questions": 40,
+    "feature_requests": 10
+  },
+  "metrics": {
+    "avg_resolution_time_hours": 24,
+    "first_response_time_minutes": 30,
+    "customer_satisfaction_target": 4.5,
+    "resolution_rate": 0.85
+  },
+  "notes": [
+    "This seed profile creates a realistic support environment for AI Support Copilot development",
+    "Includes 8 support team members with different roles and experience levels",
+    "8 customer accounts representing different companies",
+    "240 tickets over 6 months (~40 per month, ~2 per business day)",
+    "Full ticket lifecycle: creation -> assignment -> comments -> resolution",
+    "Realistic scenarios: bugs, access requests, billing, incidents, questions, features",
+    "Comment threads with back-and-forth between customers and support",
+    "25% of tickets get reassigned to different agents",
+    "85% resolution rate (15% remain open or escalated)",
+    "12 sprints of 2-week duration for performance tracking",
+    "PII examples included for testing redaction features"
+  ],
+  "usage": {
+    "generate": "python scripts/generate_dummy_jira.py --config scripts/seed_profiles/ai_support_copilot.json --out artifacts/ai_support_copilot_seed.json",
+    "load_to_mock": "docker compose up mock-jira-seed",
+    "load_to_real_jira": "python scripts/load_seed_jira.py artifacts/ai_support_copilot_seed.json"
+  }
+}
+

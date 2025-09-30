@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Support Copilot - Demo UI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+            background: #f4f5f7;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 300px 1fr 400px;
+            gap: 20px;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #172b4d;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        h2 {
+            color: #172b4d;
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 2px solid #0052cc;
+            padding-bottom: 8px;
+        }
+        
+        h3 {
+            color: #172b4d;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .ticket-list {
+            list-style: none;
+        }
+        
+        .ticket-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            border: 1px solid #dfe1e6;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .ticket-item:hover {
+            background: #f4f5f7;
+            border-color: #0052cc;
+        }
+        
+        .ticket-item.active {
+            background: #deebff;
+            border-color: #0052cc;
+        }
+        
+        .ticket-key {
+            font-weight: 600;
+            color: #0052cc;
+            margin-bottom: 4px;
+        }
+        
+        .ticket-summary {
+            font-size: 14px;
+            color: #42526e;
+        }
+        
+        .issue-detail {
+            margin-bottom: 20px;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .badge-high { background: #ffebe6; color: #bf2600; }
+        .badge-medium { background: #fff4e6; color: #ff8b00; }
+        .badge-low { background: #e3fcef; color: #006644; }
+        
+        .proposal {
+            background: #deebff;
+            border: 1px solid #0052cc;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .proposal-title {
+            font-weight: 600;
+            color: #0052cc;
+            margin-bottom: 8px;
+        }
+        
+        .proposal-content {
+            color: #42526e;
+            margin-bottom: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .proposal-meta {
+            font-size: 12px;
+            color: #6b778c;
+            margin-bottom: 12px;
+        }
+        
+        button {
+            background: #0052cc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            margin-right: 8px;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #0747a6;
+        }
+        
+        button:disabled {
+            background: #dfe1e6;
+            color: #a5adba;
+            cursor: not-allowed;
+        }
+        
+        button.secondary {
+            background: white;
+            color: #42526e;
+            border: 1px solid #dfe1e6;
+        }
+        
+        button.secondary:hover {
+            background: #f4f5f7;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b778c;
+        }
+        
+        .error {
+            background: #ffebe6;
+            border: 1px solid #bf2600;
+            color: #bf2600;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        
+        .success {
+            background: #e3fcef;
+            border: 1px solid #006644;
+            color: #006644;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        
+        .credit-card {
+            background: #f4f5f7;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .credit-total {
+            font-size: 24px;
+            font-weight: 600;
+            color: #0052cc;
+            margin-bottom: 10px;
+        }
+        
+        .contributor {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #dfe1e6;
+        }
+        
+        .contributor:last-child {
+            border-bottom: none;
+        }
+        
+        .contributor-name {
+            font-weight: 600;
+            color: #172b4d;
+        }
+        
+        .contributor-credit {
+            color: #0052cc;
+        }
+        
+        .header {
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, #0052cc 0%, #0747a6 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            color: white;
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        
+        .status-online { background: #36b37e; }
+        .status-offline { background: #ff5630; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 AI Support Copilot</h1>
+            <p>Intelligent automation for support teams</p>
+            <p style="margin-top: 10px; font-size: 14px;">
+                <span class="status-indicator status-online"></span>
+                <span id="status">Connecting...</span>
+            </p>
+        </div>
+        
+        <div class="panel">
+            <h2>📋 Support Tickets</h2>
+            <ul class="ticket-list" id="ticketList">
+                <li class="loading">Loading tickets...</li>
+            </ul>
+        </div>
+        
+        <div class="panel">
+            <h2>🎫 Ticket Details</h2>
+            <div id="issueDetail">
+                <p style="color: #6b778c; text-align: center; padding: 40px;">
+                    Select a ticket to view details
+                </p>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>🤖 AI Proposals</h2>
+            <div id="proposals">
+                <p style="color: #6b778c; text-align: center; padding: 40px;">
+                    Select a ticket to see AI suggestions
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const MOCK_JIRA_URL = 'http://localhost:9000';
+        const ORCHESTRATOR_URL = 'http://localhost:7010';
+        const TOKEN = 'support-token';
+        
+        let currentIssueKey = null;
+        
+        // Check service status
+        async function checkStatus() {
+            try {
+                const mockJiraRes = await fetch(`${MOCK_JIRA_URL}/_mock/health`);
+                const orchRes = await fetch(`${ORCHESTRATOR_URL}/health`);
+                
+                if (mockJiraRes.ok && orchRes.ok) {
+                    document.getElementById('status').innerHTML = 
+                        '<span class="status-indicator status-online"></span>Mock Jira & Orchestrator online';
+                    return true;
+                }
+            } catch (e) {
+                document.getElementById('status').innerHTML = 
+                    '<span class="status-indicator status-offline"></span>Services offline - Start mock Jira and orchestrator';
+                return false;
+            }
+        }
+        
+        // Load tickets
+        async function loadTickets() {
+            try {
+                const res = await fetch(`${MOCK_JIRA_URL}/rest/api/3/search?jql=project=SUP1&maxResults=20`, {
+                    headers: { 'Authorization': `Bearer ${TOKEN}` }
+                });
+                const data = await res.json();
+                
+                const list = document.getElementById('ticketList');
+                list.innerHTML = '';
+                
+                data.issues.forEach(issue => {
+                    const li = document.createElement('li');
+                    li.className = 'ticket-item';
+                    li.innerHTML = `
+                        <div class="ticket-key">${issue.key}</div>
+                        <div class="ticket-summary">${issue.fields.summary}</div>
+                    `;
+                    li.onclick = () => selectTicket(issue.key);
+                    list.appendChild(li);
+                });
+            } catch (e) {
+                document.getElementById('ticketList').innerHTML = 
+                    '<li class="error">Failed to load tickets. Is mock Jira running?</li>';
+            }
+        }
+        
+        // Select ticket
+        async function selectTicket(issueKey) {
+            currentIssueKey = issueKey;
+            
+            // Highlight selected
+            document.querySelectorAll('.ticket-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.textContent.includes(issueKey)) {
+                    item.classList.add('active');
+                }
+            });
+            
+            await Promise.all([
+                loadIssueDetail(issueKey),
+                loadProposals(issueKey)
+            ]);
+        }
+        
+        // Load issue detail
+        async function loadIssueDetail(issueKey) {
+            const detail = document.getElementById('issueDetail');
+            detail.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                const res = await fetch(`${MOCK_JIRA_URL}/rest/api/3/issue/${issueKey}`, {
+                    headers: { 'Authorization': `Bearer ${TOKEN}` }
+                });
+                const issue = await res.json();
+                
+                const priority = issue.fields.priority?.name || 'Medium';
+                const status = issue.fields.status?.name || 'Open';
+                const assignee = issue.fields.assignee?.displayName || 'Unassigned';
+                const reporter = issue.fields.reporter?.displayName || 'Unknown';
+                
+                detail.innerHTML = `
+                    <div class="issue-detail">
+                        <h3>${issue.key}: ${issue.fields.summary}</h3>
+                        <div style="margin: 15px 0;">
+                            <span class="badge badge-${priority.toLowerCase()}">${priority}</span>
+                            <span class="badge">${status}</span>
+                        </div>
+                        <p style="color: #42526e; margin-bottom: 15px; line-height: 1.6;">
+                            ${extractText(issue.fields.description)}
+                        </p>
+                        <div style="font-size: 14px; color: #6b778c;">
+                            <p><strong>Reporter:</strong> ${reporter}</p>
+                            <p><strong>Assignee:</strong> ${assignee}</p>
+                            <p><strong>Comments:</strong> ${issue.fields.comment?.comments?.length || 0}</p>
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                detail.innerHTML = '<div class="error">Failed to load issue details</div>';
+            }
+        }
+        
+        // Load AI proposals
+        async function loadProposals(issueKey) {
+            const container = document.getElementById('proposals');
+            container.innerHTML = '<div class="loading">Analyzing ticket...</div>';
+            
+            try {
+                const res = await fetch(`${ORCHESTRATOR_URL}/v1/jira/ingest?issueKey=${issueKey}`, {
+                    headers: {
+                        'Authorization': 'Bearer forge-dev-secret',
+                        'X-Tenant-Id': 'demo',
+                        'X-DS-Secret': 'forge-dev-secret'
+                    }
+                });
+                const data = await res.json();
+                
+                if (!data.proposals || data.proposals.length === 0) {
+                    container.innerHTML = '<p style="color: #6b778c;">No AI proposals available for this ticket.</p>';
+                    return;
+                }
+                
+                container.innerHTML = '';
+                
+                data.proposals.forEach(proposal => {
+                    const div = document.createElement('div');
+                    div.className = 'proposal';
+                    
+                    let content = '';
+                    if (proposal.kind === 'comment') {
+                        content = extractText(proposal.body_adf).substring(0, 200) + '...';
+                    } else if (proposal.kind === 'transition') {
+                        content = `Transition to: ${proposal.transitionName || proposal.transitionId}`;
+                    } else if (proposal.kind === 'set-labels') {
+                        content = `Labels: ${proposal.labels?.join(', ')}`;
+                    }
+                    
+                    div.innerHTML = `
+                        <div class="proposal-title">${getProposalTitle(proposal)}</div>
+                        <div class="proposal-content">${content}</div>
+                        ${proposal.estimatedSeconds ? 
+                            `<div class="proposal-meta">⏱️ Estimated savings: ${proposal.estimatedSeconds}s</div>` : ''}
+                        ${proposal.explain ? 
+                            `<div class="proposal-meta">💡 ${proposal.explain}</div>` : ''}
+                        <button onclick="applyProposal('${proposal.id}', '${proposal.kind}')">Apply</button>
+                        <button class="secondary" onclick="explainProposal('${proposal.id}')">Explain</button>
+                    `;
+                    
+                    container.appendChild(div);
+                });
+            } catch (e) {
+                container.innerHTML = '<div class="error">Failed to load proposals. Is orchestrator running?</div>';
+            }
+        }
+        
+        // Apply proposal
+        async function applyProposal(proposalId, kind) {
+            if (!currentIssueKey) return;
+            
+            try {
+                const res = await fetch(`${ORCHESTRATOR_URL}/v1/jira/apply`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer forge-dev-secret',
+                        'X-Tenant-Id': 'demo',
+                        'X-DS-Secret': 'forge-dev-secret',
+                        'Idempotency-Key': `demo-${Date.now()}`
+                    },
+                    body: JSON.stringify({
+                        issueKey: currentIssueKey,
+                        action: { id: proposalId, kind: kind }
+                    })
+                });
+                
+                const result = await res.json();
+                
+                if (result.ok) {
+                    alert(`✅ Applied successfully!\n\nSaved: ${result.credit?.secondsSaved || 0}s`);
+                    await selectTicket(currentIssueKey); // Refresh
+                } else {
+                    alert('❌ Failed to apply proposal');
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            }
+        }
+        
+        // Helper functions
+        function getProposalTitle(proposal) {
+            const titles = {
+                'comment': '💬 Add Comment',
+                'transition': '🔄 Transition Status',
+                'set-labels': '🏷️ Update Labels',
+                'link': '🔗 Create Link'
+            };
+            return titles[proposal.kind] || proposal.kind;
+        }
+        
+        function extractText(adf) {
+            if (!adf) return '';
+            if (typeof adf === 'string') return adf;
+            if (adf.text) return adf.text;
+            if (adf.content) {
+                return adf.content.map(extractText).join(' ');
+            }
+            return '';
+        }
+        
+        function explainProposal(proposalId) {
+            alert('Explanation feature coming soon!');
+        }
+        
+        // Initialize
+        async function init() {
+            const online = await checkStatus();
+            if (online) {
+                await loadTickets();
+            }
+        }
+        
+        init();
+        
+        // Auto-refresh status every 10s
+        setInterval(checkStatus, 10000);
+    </script>
+</body>
+</html>
+

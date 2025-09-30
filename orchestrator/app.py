@@ -32,6 +32,13 @@ from prometheus_client import (
 from . import audit, credit, db, metrics as metrics_module
 from .models import Impact
 
+# Import Pulse API router
+try:
+    from . import pulse_api
+    PULSE_API_AVAILABLE = True
+except ImportError:
+    PULSE_API_AVAILABLE = False
+
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "http://localhost:9000")
 JIRA_TOKEN = os.getenv("JIRA_TOKEN", "mock-token")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "dev-secret")
@@ -140,6 +147,10 @@ class ApplyIn(BaseModel):
 
 
 app = FastAPI(title="Digital Spiral Orchestrator (Jira MVP)")
+
+# Include Pulse API router if available
+if PULSE_API_AVAILABLE:
+    app.include_router(pulse_api.router)
 
 
 @app.get("/health")

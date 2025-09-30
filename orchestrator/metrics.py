@@ -4,9 +4,15 @@ import json
 import os
 import statistics
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+
+# Python 3.10 compatibility
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 _BASELINES = {
     "comment": 30,
