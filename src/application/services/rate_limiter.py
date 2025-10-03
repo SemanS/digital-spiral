@@ -211,7 +211,7 @@ class InMemoryRateLimiter:
 
         if count >= limit:
             # Rate limit exceeded
-            retry_after = int(window - elapsed)
+            retry_after = max(1, int(window - elapsed))  # Ensure at least 1 second
             raise RateLimitError(
                 f"Rate limit exceeded for instance {instance_id}. "
                 f"Limit: {limit} requests per {window}s",

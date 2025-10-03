@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import DateTime, Index, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, TenantMixin, TimestampMixin, UUIDMixin
+from .base import Base, TenantMixin, TimestampMixin, UUIDMixin, JSONBType
 
 if TYPE_CHECKING:
     pass
@@ -44,7 +44,7 @@ class IdempotencyKey(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     # Result
     result: Mapped[dict] = mapped_column(
-        JSONB,
+        JSONBType,
         default=dict,
         nullable=False,
         doc="JSON result of the operation (response body)",
@@ -60,7 +60,7 @@ class IdempotencyKey(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     # Error (if failed)
     error: Mapped[dict | None] = mapped_column(
-        JSONB,
+        JSONBType,
         nullable=True,
         doc="Error details if the operation failed",
     )
@@ -69,7 +69,6 @@ class IdempotencyKey(Base, UUIDMixin, TimestampMixin, TenantMixin):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        index=True,
         doc="When this key expires (typically 24 hours from creation)",
     )
 

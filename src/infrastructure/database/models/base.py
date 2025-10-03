@@ -6,9 +6,40 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, String, JSON
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
+
+
+class JSONBType(TypeDecorator):
+    """JSONB type that falls back to JSON for SQLite."""
+
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(JSONB())
+        else:
+            return dialect.type_descriptor(JSON())
+
+
+class ArrayType(TypeDecorator):
+    """ARRAY type that falls back to JSON for SQLite."""
+
+    impl = JSON
+    cache_ok = True
+
+    def __init__(self, item_type=String, *args, **kwargs):
+        self.item_type = item_type
+        super().__init__(*args, **kwargs)
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(ARRAY(self.item_type))
+        else:
+            return dialect.type_descriptor(JSON())
 
 
 class Base(DeclarativeBase):

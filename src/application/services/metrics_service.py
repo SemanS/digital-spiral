@@ -193,6 +193,15 @@ def get_metrics_collector() -> MetricsCollector:
     return _metrics_collector
 
 
+def reset_metrics_collector():
+    """Reset the global metrics collector.
+
+    This is useful for testing to ensure a clean state between tests.
+    """
+    global _metrics_collector
+    _metrics_collector = MetricsCollector()
+
+
 # Convenience functions
 def increment_counter(metric: str, value: int = 1, labels: Optional[Dict[str, str]] = None):
     """Increment a counter metric.
@@ -256,6 +265,7 @@ class Timer:
 __all__ = [
     "MetricsCollector",
     "get_metrics_collector",
+    "reset_metrics_collector",
     "increment_counter",
     "observe_duration",
     "set_gauge",

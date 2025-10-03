@@ -9,7 +9,16 @@ from src.application.services.metrics_service import (
     increment_counter,
     observe_duration,
     set_gauge,
+    reset_metrics_collector,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_global_collector():
+    """Reset the global metrics collector before each test."""
+    reset_metrics_collector()
+    yield
+    reset_metrics_collector()
 
 
 @pytest.fixture
@@ -166,25 +175,34 @@ class TestTimer:
 class TestConvenienceFunctions:
     """Tests for convenience functions."""
 
-    def test_increment_counter_function(self, collector):
+    def test_increment_counter_function(self):
         """Test increment_counter convenience function."""
+        from src.application.services.metrics_service import get_metrics_collector
+
         increment_counter("test.counter")
         increment_counter("test.counter", value=5)
 
+        collector = get_metrics_collector()
         assert collector.get_counter("test.counter") == 6
 
-    def test_observe_duration_function(self, collector):
+    def test_observe_duration_function(self):
         """Test observe_duration convenience function."""
+        from src.application.services.metrics_service import get_metrics_collector
+
         observe_duration("test.duration", 100.0)
         observe_duration("test.duration", 200.0)
 
+        collector = get_metrics_collector()
         stats = collector.get_histogram_stats("test.duration")
         assert stats["count"] == 2
         assert stats["avg"] == 150.0
 
-    def test_set_gauge_function(self, collector):
+    def test_set_gauge_function(self):
         """Test set_gauge convenience function."""
+        from src.application.services.metrics_service import get_metrics_collector
+
         set_gauge("test.gauge", 42.0)
 
+        collector = get_metrics_collector()
         assert collector.get_gauge("test.gauge") == 42.0
 

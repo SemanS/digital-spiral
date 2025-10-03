@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import DateTime, Index, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, TenantMixin, TimestampMixin, UUIDMixin
+from .base import Base, TenantMixin, TimestampMixin, UUIDMixin, JSONBType
 
 if TYPE_CHECKING:
     pass
@@ -59,7 +59,7 @@ class AuditLog(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     # Change Details
     changes: Mapped[dict] = mapped_column(
-        JSONB,
+        JSONBType,
         default=dict,
         nullable=False,
         doc="JSON object with before/after values for changed fields",
@@ -86,8 +86,8 @@ class AuditLog(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
     # Metadata
-    metadata: Mapped[dict] = mapped_column(
-        JSONB,
+    audit_metadata: Mapped[dict] = mapped_column(
+        JSONBType,
         default=dict,
         nullable=False,
         doc="Additional metadata (instance_id, tool_name, etc.)",
@@ -103,7 +103,7 @@ class AuditLog(Base, UUIDMixin, TimestampMixin, TenantMixin):
         Index("ix_audit_logs_tenant_action", "tenant_id", "action"),
         Index("ix_audit_logs_user_timestamp", "user_id", "created_at"),
         Index("ix_audit_logs_changes", "changes", postgresql_using="gin"),
-        Index("ix_audit_logs_metadata", "metadata", postgresql_using="gin"),
+        Index("ix_audit_logs_metadata", "audit_metadata", postgresql_using="gin"),
     )
 
     def __repr__(self) -> str:

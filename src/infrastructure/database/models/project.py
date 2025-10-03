@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, TenantMixin, TimestampMixin, UUIDMixin
+from .base import Base, TenantMixin, TimestampMixin, UUIDMixin, JSONBType
 
 if TYPE_CHECKING:
     from .issue import Issue
@@ -120,7 +120,7 @@ class Project(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     # Raw Data
     raw_jsonb: Mapped[dict] = mapped_column(
-        JSONB,
+        JSONBType,
         default=dict,
         nullable=False,
         doc="Full raw Jira project JSON",

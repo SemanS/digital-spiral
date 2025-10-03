@@ -61,7 +61,7 @@ class AuditLogService:
             request_id=request_id,
             ip_address=ip_address,
             user_agent=user_agent,
-            metadata=metadata or {},
+            audit_metadata=metadata or {},
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )

@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, TenantMixin, TimestampMixin, UUIDMixin
+from .base import Base, TenantMixin, TimestampMixin, UUIDMixin, JSONBType, ArrayType
 
 if TYPE_CHECKING:
     from .changelog import Changelog
@@ -149,14 +149,14 @@ class Issue(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     # Labels & Components
     labels: Mapped[list[str]] = mapped_column(
-        ARRAY(String),
+        ArrayType(String),
         default=list,
         nullable=False,
         doc="Issue labels",
     )
 
     components: Mapped[list[str]] = mapped_column(
-        ARRAY(String),
+        ArrayType(String),
         default=list,
         nullable=False,
         doc="Issue components",
@@ -184,14 +184,14 @@ class Issue(Base, UUIDMixin, TimestampMixin, TenantMixin):
 
     # Custom Fields & Raw Data
     custom_fields: Mapped[dict] = mapped_column(
-        JSONB,
+        JSONBType,
         default=dict,
         nullable=False,
         doc="Custom field values (JSONB)",
     )
 
     raw_jsonb: Mapped[dict] = mapped_column(
-        JSONB,
+        JSONBType,
         default=dict,
         nullable=False,
         doc="Full raw Jira issue JSON",

@@ -48,7 +48,8 @@ def live_server() -> str:
 
 
 # Database fixtures for MCP tests
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+import tempfile
+import os
 
 
 @pytest.fixture(scope="session")
@@ -59,11 +60,17 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 async def engine():
-    """Create a test database engine."""
+    """Create a test database engine with a unique temporary file."""
+    # Create a temporary file for the database
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+
+    test_db_url = f"sqlite+aiosqlite:///{db_path}"
+
     engine = create_async_engine(
-        TEST_DATABASE_URL,
+        test_db_url,
         echo=False,
         poolclass=NullPool,
     )
@@ -74,14 +81,17 @@ async def engine():
 
     yield engine
 
-    # Drop all tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-
+    # Cleanup
     await engine.dispose()
 
+    # Remove the temporary database file
+    try:
+        os.unlink(db_path)
+    except OSError:
+        pass
 
-@pytest.fixture(scope="session")
+
+@pytest.fixture(scope="function")
 async def session_factory(engine):
     """Create a session factory."""
     return async_sessionmaker(
