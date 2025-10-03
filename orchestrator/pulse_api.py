@@ -263,11 +263,14 @@ async def get_project_detail(request: Request, project_key: str):
     archived projects to enable a clearer UI hint.
     """
 
+    logger.info(f"GET PROJECT DETAIL: {project_key}")
+
     tenant_id = request.headers.get("x-tenant-id", "demo")
 
     try:
         # Get all active Jira instances
         instances = pulse_service.list_jira_instances(tenant_id)
+        logger.info(f"Found {len(instances)} instances for tenant {tenant_id}")
 
         # Lazy import to keep module-level imports light
         from clients.python.jira_cloud_adapter import JiraCloudAdapter
@@ -275,9 +278,12 @@ async def get_project_detail(request: Request, project_key: str):
 
         for instance in instances:
             try:
+                logger.info(f"Trying instance: {instance['display_name']}")
+
                 # Get instance details with API token
                 inst_details = pulse_service.get_jira_instance(instance["id"])
                 if not inst_details:
+                    logger.warning(f"Could not get instance details for {instance['id']}")
                     continue
 
                 adapter = JiraCloudAdapter(
@@ -286,10 +292,14 @@ async def get_project_detail(request: Request, project_key: str):
                     inst_details["api_token"],
                 )
 
-                # First, try to resolve the project in this instance
+                # Try to get project info (may fail with 410 Gone)
+                project_name = project_key
                 try:
+                    logger.info(f"Getting project info for {project_key}")
                     project_info = await asyncio.to_thread(adapter.get_project, project_key)
-                    if project_info.get("archived"):
+                    logger.info(f"Project info type: {type(project_info)}, is None: {project_info is None}")
+
+                    if project_info is not None and project_info.get("archived"):
                         # Signal archived/deleted with 410 so UI can show a helpful tip
                         raise HTTPException(
                             status_code=410,
@@ -298,69 +308,89 @@ async def get_project_detail(request: Request, project_key: str):
                                 "Unarchive it in Jira to view details."
                             ),
                         )
-                    project_name = project_info.get("name") or project_key
+                    if project_info is not None:
+                        project_name = project_info.get("name") or project_key
+                        logger.info(f"Project name: {project_name}")
                 except JiraNotFound:
                     # Not in this instance, try the next one
+                    logger.info(f"Project {project_key} not found (JiraNotFound)")
                     continue
+                except Exception as e:
+                    # If 410 Gone or other error, just use project_key as name and continue
+                    logger.warning(f"Could not get project info for {project_key}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Don't continue - try to fetch issues anyway
 
                 # Fetch issues using the adapter's search (uses /search/jql)
-                result = await asyncio.to_thread(
-                    adapter.search,
-                    f"project = {project_key} ORDER BY updated DESC",
-                    50,
-                    0,
-                    [
-                        "summary",
-                        "status",
-                        "assignee",
-                        "priority",
-                        "issuetype",
-                        "created",
-                        "updated",
-                    ],
-                )
+                try:
+                    logger.info(f"Searching for issues in project {project_key}")
+                    result = await asyncio.to_thread(
+                        adapter.search,
+                        f"project = {project_key} ORDER BY updated DESC",
+                        50,
+                        0,
+                        [
+                            "summary",
+                            "status",
+                            "assignee",
+                            "priority",
+                            "issuetype",
+                            "created",
+                            "updated",
+                        ],
+                    )
 
-                issues = result.get("issues", [])
+                    if result is None:
+                        logger.error(f"Search returned None for project {project_key}")
+                        continue
 
-                # Calculate stats
-                total = len(issues)
-                open_count = len(
-                    [
-                        i
-                        for i in issues
-                        if i["fields"]["status"]["name"] not in ["Done", "Closed"]
-                    ]
-                )
-                closed_count = total - open_count
+                    issues = result.get("issues", [])
+                    logger.info(f"Found {len(issues)} issues for {project_key}")
 
-                # Group by status
-                status_counts = {}
-                for issue in issues:
-                    status = issue["fields"]["status"]["name"]
-                    status_counts[status] = status_counts.get(status, 0) + 1
+                    # Calculate stats
+                    total = len(issues)
+                    open_count = len(
+                        [
+                            i
+                            for i in issues
+                            if (i.get("fields", {}).get("status") or {}).get("name") not in ["Done", "Closed"]
+                        ]
+                    )
+                    closed_count = total - open_count
 
-                return {
-                    "project_key": project_key,
-                    "project_name": project_name,
-                    "instance_name": instance["display_name"],
-                    "total_issues": total,
-                    "open_issues": open_count,
-                    "closed_issues": closed_count,
-                    "status_breakdown": status_counts,
-                    "issues": [
-                        {
-                            "key": issue["key"],
-                            "summary": issue["fields"]["summary"],
-                            "status": issue["fields"]["status"]["name"],
-                            "priority": issue["fields"].get("priority", {}).get("name", "None"),
-                            "type": issue["fields"]["issuetype"]["name"],
-                            "assignee": issue["fields"].get("assignee", {}).get("displayName", "Unassigned"),
-                            "created": issue["fields"]["created"],
-                            "updated": issue["fields"]["updated"],
-                        }
-                        for issue in issues
-                    ],
-                }
+                    # Group by status
+                    status_counts = {}
+                    for issue in issues:
+                        status = (issue.get("fields", {}).get("status") or {}).get("name", "Unknown")
+                        status_counts[status] = status_counts.get(status, 0) + 1
+
+                    return {
+                        "project_key": project_key,
+                        "project_name": project_name,
+                        "instance_name": instance["display_name"],
+                        "total_issues": total,
+                        "open_issues": open_count,
+                        "closed_issues": closed_count,
+                        "status_breakdown": status_counts,
+                        "issues": [
+                            {
+                                "key": issue.get("key", "unknown"),
+                                "summary": issue.get("fields", {}).get("summary", "No summary"),
+                                "status": (issue.get("fields", {}).get("status") or {}).get("name", "Unknown"),
+                                "priority": (issue.get("fields", {}).get("priority") or {}).get("name", "None"),
+                                "type": (issue.get("fields", {}).get("issuetype") or {}).get("name", "Unknown"),
+                                "assignee": (issue.get("fields", {}).get("assignee") or {}).get("displayName", "Unassigned"),
+                                "created": issue.get("fields", {}).get("created", ""),
+                                "updated": issue.get("fields", {}).get("updated", ""),
+                            }
+                            for issue in issues
+                        ],
+                    }
+
+                except Exception as search_error:
+                    logger.error(f"Search failed for project {project_key}: {search_error}")
+                    continue
 
             except HTTPException:
                 # Bubble up 410 archived, etc.

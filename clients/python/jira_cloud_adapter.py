@@ -138,8 +138,10 @@ class JiraCloudAdapter:
     def search(self, jql: str, max_results: int = 50, start_at: int = 0, fields: list[str] | None = None) -> dict[str, Any]:
         """Search for issues using JQL.
 
-        Note: Jira Cloud now requires using /rest/api/3/search/jql endpoint.
-        This method uses the new endpoint with proper field expansion.
+        Note: Some Jira instances return 410 Gone for /rest/api/3/search endpoints.
+        This method tries multiple approaches:
+        1. Try /rest/api/3/search (standard endpoint)
+        2. If that fails with 410, try Agile API via boards
         """
         if fields is None:
             fields = ["summary", "status", "assignee", "priority", "created", "updated", "issuetype", "project"]
@@ -151,14 +153,81 @@ class JiraCloudAdapter:
         }
 
         if start_at > 0:
-            # For pagination, we need to use nextPageToken from previous response
             params["startAt"] = start_at
 
-        return self._call(
+        # Try standard search endpoint first
+        try:
+            return self._call(
+                "GET",
+                "/rest/api/3/search",
+                params=params,
+            )
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Search failed with: {e}")
+
+            # If 410 Gone, try Agile API as fallback
+            if "410" in str(e):
+                logger.info(f"Got 410 Gone, trying Agile API fallback for JQL: {jql}")
+                # Extract project key from JQL (simple parsing)
+                import re
+                match = re.search(r'project\s*=\s*["\']?(\w+)["\']?', jql, re.IGNORECASE)
+                if match:
+                    project_key = match.group(1)
+                    logger.info(f"Extracted project key: {project_key}")
+                    return self._search_via_agile_api(project_key, max_results, fields)
+                else:
+                    logger.error(f"Could not extract project key from JQL: {jql}")
+            # Re-raise if not 410 or couldn't parse project
+            logger.info(f"Re-raising exception")
+            raise
+
+    def _search_via_agile_api(self, project_key: str, max_results: int, fields: list[str]) -> dict[str, Any]:
+        """Fallback search using Agile API when standard search returns 410 Gone."""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"Using Agile API fallback for project {project_key}")
+
+        # Get boards for project
+        boards_result = self._call(
             "GET",
-            "/rest/api/3/search/jql",
-            params=params,
+            "/rest/agile/1.0/board",
+            params={"projectKeyOrId": project_key}
         )
+
+        logger.info(f"Boards result type: {type(boards_result)}, is None: {boards_result is None}")
+
+        if boards_result is None:
+            logger.error("Boards result is None!")
+            return {"issues": [], "total": 0}
+
+        boards = boards_result.get("values", [])
+        logger.info(f"Found {len(boards)} boards")
+
+        if not boards:
+            # Return empty result if no boards
+            return {"issues": [], "total": 0}
+
+        # Get issues from first board
+        board_id = boards[0]["id"]
+        logger.info(f"Getting issues from board {board_id}")
+
+        result = self._call(
+            "GET",
+            f"/rest/agile/1.0/board/{board_id}/issue",
+            params={
+                "maxResults": max_results,
+                "fields": ",".join(fields),
+            }
+        )
+
+        logger.info(f"Result type: {type(result)}, is None: {result is None}")
+        if result:
+            logger.info(f"Issues count: {len(result.get('issues', []))}")
+
+        return result
 
     def get_issue(self, issue_key: str) -> dict[str, Any]:
         """Get issue by key."""
