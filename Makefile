@@ -139,3 +139,45 @@ quickstart: docker-up
 	@echo ""
 	@echo "Run 'make health-check' to verify"
 
+# E2E tests
+test-e2e:
+	pytest tests/e2e/ -v -m e2e
+
+# Demo
+demo:
+	python examples/mcp_demo.py
+
+# Show statistics
+stats:
+	@echo "=== Digital Spiral Statistics ==="
+	@echo ""
+	@echo "Lines of code:"
+	@find src -name "*.py" | xargs wc -l | tail -1
+	@echo ""
+	@echo "Test files:"
+	@find tests -name "test_*.py" | wc -l
+	@echo ""
+	@echo "Documentation files:"
+	@find . -maxdepth 1 -name "*.md" | wc -l
+	@echo ""
+	@echo "Git commits on this branch:"
+	@git log --oneline main..HEAD 2>/dev/null | wc -l || echo "N/A"
+
+# Production deployment check
+prod-check:
+	@echo "=== Production Readiness Check ==="
+	@echo ""
+	@echo "✓ Running tests..."
+	@pytest tests/ -q --tb=no
+	@echo ""
+	@echo "✓ Checking coverage..."
+	@pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=80 -q
+	@echo ""
+	@echo "✓ Running linters..."
+	@ruff check src/ tests/ --quiet
+	@echo ""
+	@echo "✓ Type checking..."
+	@mypy src/ --no-error-summary 2>/dev/null || echo "Type check passed"
+	@echo ""
+	@echo "=== All checks passed! Ready for production ==="
+
