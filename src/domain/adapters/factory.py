@@ -6,6 +6,7 @@ from uuid import UUID
 from .base import SourceAdapter, SourceType
 from .jira_adapter import JiraAdapter
 from .github_adapter import GitHubAdapter
+from .asana_adapter import AsanaAdapter
 
 
 class AdapterRegistry:
@@ -14,6 +15,7 @@ class AdapterRegistry:
     _adapters: Dict[SourceType, Type[SourceAdapter]] = {
         SourceType.JIRA: JiraAdapter,
         SourceType.GITHUB: GitHubAdapter,
+        SourceType.ASANA: AsanaAdapter,
     }
 
     @classmethod
