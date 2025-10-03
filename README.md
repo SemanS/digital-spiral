@@ -1,14 +1,14 @@
 # Digital Spiral 🌀
 
-**AI-Powered Jira Analytics Platform**
+**AI-Powered Multi-Source Issue Tracking Integration**
 
-Digital Spiral is a production-ready platform that integrates with Jira to provide advanced analytics, AI-powered insights, and intelligent automation for project management.
+Digital Spiral is a production-ready platform that integrates with multiple issue tracking systems (Jira, GitHub, Asana, Linear, ClickUp) through standardized MCP (Model Context Protocol) interfaces, enabling AI assistants to interact with your project management tools.
 
-[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-green.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-135%20passing-brightgreen.svg)](tests/)
-[![Coverage](https://img.shields.io/badge/coverage-90%25+-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-50%2B%20passing-brightgreen.svg)](tests/)
+[![Coverage](https://img.shields.io/badge/coverage-85%25+-brightgreen.svg)](tests/)
 
 ## 🚀 Features
 

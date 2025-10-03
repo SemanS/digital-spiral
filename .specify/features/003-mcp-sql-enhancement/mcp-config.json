@@ -1,0 +1,431 @@
+{
+  "$schema": "https://spec.modelcontextprotocol.io/schema/mcp-config.json",
+  "mcpServers": {
+    "jira-mcp": {
+      "transport": "sse",
+      "url": "http://localhost:8055/sse",
+      "description": "MCP server for Jira operations (search, create, update, transition, comment, link)",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE",
+        "X-Tenant-Id": "demo"
+      },
+      "tools": [
+        {
+          "name": "jira.search",
+          "description": "Search Jira issues using JQL with multi-instance support",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "description": "JQL query string"
+            },
+            "instance_id": {
+              "type": "string",
+              "required": false,
+              "description": "Specific Jira instance UUID (optional, searches all if not provided)"
+            },
+            "limit": {
+              "type": "integer",
+              "required": false,
+              "default": 50,
+              "min": 1,
+              "max": 100,
+              "description": "Maximum number of results"
+            },
+            "cursor": {
+              "type": "string",
+              "required": false,
+              "description": "Pagination cursor from previous response"
+            },
+            "fields": {
+              "type": "array",
+              "required": false,
+              "default": ["summary", "status", "assignee", "priority"],
+              "description": "Fields to include in response"
+            }
+          }
+        },
+        {
+          "name": "jira.get_issue",
+          "description": "Get detailed information about a specific Jira issue",
+          "parameters": {
+            "issue_key": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z]+-\\d+$",
+              "description": "Issue key (e.g., PROJ-123)"
+            },
+            "instance_id": {
+              "type": "string",
+              "required": false,
+              "description": "Jira instance UUID (auto-detected if not provided)"
+            },
+            "expand": {
+              "type": "array",
+              "required": false,
+              "default": ["changelog", "comments"],
+              "description": "Additional data to expand"
+            }
+          }
+        },
+        {
+          "name": "jira.create_issue",
+          "description": "Create a new Jira issue with audit logging",
+          "parameters": {
+            "instance_id": {
+              "type": "string",
+              "required": true,
+              "description": "Target Jira instance UUID"
+            },
+            "project_key": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z]+$",
+              "description": "Project key"
+            },
+            "issue_type_id": {
+              "type": "string",
+              "required": true,
+              "description": "Issue type ID (e.g., '10001')"
+            },
+            "summary": {
+              "type": "string",
+              "required": true,
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Issue summary"
+            },
+            "description_adf": {
+              "type": "object",
+              "required": false,
+              "description": "Description in Atlassian Document Format"
+            },
+            "fields": {
+              "type": "object",
+              "required": false,
+              "description": "Custom fields"
+            },
+            "idempotency_key": {
+              "type": "string",
+              "required": false,
+              "pattern": "^[a-zA-Z0-9-_]{1,64}$",
+              "description": "Idempotency key for retry safety"
+            }
+          }
+        },
+        {
+          "name": "jira.update_issue",
+          "description": "Update an existing Jira issue",
+          "parameters": {
+            "issue_key": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z]+-\\d+$",
+              "description": "Issue key"
+            },
+            "instance_id": {
+              "type": "string",
+              "required": false,
+              "description": "Jira instance UUID"
+            },
+            "fields": {
+              "type": "object",
+              "required": true,
+              "description": "Fields to update"
+            },
+            "idempotency_key": {
+              "type": "string",
+              "required": false,
+              "description": "Idempotency key"
+            }
+          }
+        },
+        {
+          "name": "jira.transition_issue",
+          "description": "Change the status of a Jira issue",
+          "parameters": {
+            "issue_key": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z]+-\\d+$",
+              "description": "Issue key"
+            },
+            "to_status": {
+              "type": "string",
+              "required": true,
+              "description": "Target status name (e.g., 'In Progress', 'Done')"
+            },
+            "instance_id": {
+              "type": "string",
+              "required": false,
+              "description": "Jira instance UUID"
+            },
+            "comment": {
+              "type": "string",
+              "required": false,
+              "maxLength": 5000,
+              "description": "Optional transition comment"
+            },
+            "idempotency_key": {
+              "type": "string",
+              "required": false,
+              "description": "Idempotency key"
+            }
+          }
+        },
+        {
+          "name": "jira.add_comment",
+          "description": "Add a comment to a Jira issue",
+          "parameters": {
+            "issue_key": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z]+-\\d+$",
+              "description": "Issue key"
+            },
+            "body_adf": {
+              "type": "object",
+              "required": true,
+              "description": "Comment body in Atlassian Document Format"
+            },
+            "instance_id": {
+              "type": "string",
+              "required": false,
+              "description": "Jira instance UUID"
+            },
+            "idempotency_key": {
+              "type": "string",
+              "required": false,
+              "description": "Idempotency key"
+            }
+          }
+        },
+        {
+          "name": "jira.link_issues",
+          "description": "Link two Jira issues together",
+          "parameters": {
+            "inward_issue": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z]+-\\d+$",
+              "description": "Source issue key"
+            },
+            "outward_issue": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z]+-\\d+$",
+              "description": "Target issue key"
+            },
+            "link_type": {
+              "type": "string",
+              "required": true,
+              "description": "Link type (e.g., 'blocks', 'relates to')"
+            },
+            "instance_id": {
+              "type": "string",
+              "required": false,
+              "description": "Jira instance UUID"
+            },
+            "idempotency_key": {
+              "type": "string",
+              "required": false,
+              "description": "Idempotency key"
+            }
+          }
+        },
+        {
+          "name": "jira.list_transitions",
+          "description": "Get available status transitions for a Jira issue",
+          "parameters": {
+            "issue_key": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z]+-\\d+$",
+              "description": "Issue key"
+            },
+            "instance_id": {
+              "type": "string",
+              "required": false,
+              "description": "Jira instance UUID"
+            }
+          }
+        }
+      ]
+    },
+    "sql-mcp": {
+      "transport": "sse",
+      "url": "http://localhost:8056/sse",
+      "description": "MCP server for SQL query templates (whitelisted, parameterized queries only)",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE",
+        "X-Tenant-Id": "demo"
+      },
+      "tools": [
+        {
+          "name": "sql.query_template",
+          "description": "Execute a whitelisted SQL query template",
+          "parameters": {
+            "template_name": {
+              "type": "string",
+              "required": true,
+              "enum": [
+                "search_issues_by_project",
+                "get_project_metrics",
+                "search_issues_by_text",
+                "get_issue_history",
+                "get_user_workload",
+                "lead_time_metrics"
+              ],
+              "description": "Name of the query template to execute"
+            },
+            "params": {
+              "type": "object",
+              "required": true,
+              "description": "Template-specific parameters (validated per template)"
+            }
+          }
+        }
+      ],
+      "templates": {
+        "search_issues_by_project": {
+          "description": "Search issues in a project with optional filters",
+          "parameters": {
+            "project_key": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z0-9-]+$",
+              "description": "Project key"
+            },
+            "status": {
+              "type": "string",
+              "required": false,
+              "description": "Filter by status"
+            },
+            "assignee": {
+              "type": "string",
+              "required": false,
+              "description": "Filter by assignee"
+            },
+            "priority": {
+              "type": "string",
+              "required": false,
+              "description": "Filter by priority"
+            },
+            "limit": {
+              "type": "integer",
+              "required": false,
+              "default": 50,
+              "min": 1,
+              "max": 100,
+              "description": "Maximum results"
+            }
+          }
+        },
+        "get_project_metrics": {
+          "description": "Get aggregated metrics for a project",
+          "parameters": {
+            "project_key": {
+              "type": "string",
+              "required": true,
+              "description": "Project key"
+            },
+            "days": {
+              "type": "integer",
+              "required": false,
+              "default": 30,
+              "min": 1,
+              "max": 365,
+              "description": "Number of days to look back"
+            }
+          }
+        },
+        "search_issues_by_text": {
+          "description": "Full-text search in issue titles using trigram matching",
+          "parameters": {
+            "query": {
+              "type": "string",
+              "required": true,
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Search query"
+            },
+            "project_keys": {
+              "type": "array",
+              "required": true,
+              "minItems": 1,
+              "maxItems": 50,
+              "description": "Projects to search in"
+            },
+            "limit": {
+              "type": "integer",
+              "required": false,
+              "default": 20,
+              "min": 1,
+              "max": 100,
+              "description": "Maximum results"
+            }
+          }
+        },
+        "get_issue_history": {
+          "description": "Get change history for an issue",
+          "parameters": {
+            "issue_key": {
+              "type": "string",
+              "required": true,
+              "pattern": "^[A-Z]+-\\d+$",
+              "description": "Issue key"
+            },
+            "limit": {
+              "type": "integer",
+              "required": false,
+              "default": 100,
+              "min": 1,
+              "max": 500,
+              "description": "Maximum history entries"
+            }
+          }
+        },
+        "get_user_workload": {
+          "description": "Get workload analysis for a user",
+          "parameters": {
+            "assignee": {
+              "type": "string",
+              "required": true,
+              "description": "User identifier"
+            },
+            "status": {
+              "type": "array",
+              "required": false,
+              "maxItems": 20,
+              "description": "Filter by statuses"
+            }
+          }
+        },
+        "lead_time_metrics": {
+          "description": "Get lead time metrics for a project or team",
+          "parameters": {
+            "project_key": {
+              "type": "string",
+              "required": false,
+              "description": "Project key (optional)"
+            },
+            "team": {
+              "type": "string",
+              "required": false,
+              "description": "Team name (optional)"
+            },
+            "days": {
+              "type": "integer",
+              "required": false,
+              "default": 30,
+              "min": 1,
+              "max": 365,
+              "description": "Number of days to analyze"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

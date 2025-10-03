@@ -86,5 +86,68 @@ services:
       timeout: 3s
       retries: 6
 
+  redis:
+    image: redis:7-alpine
+    container_name: ds-redis
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  mcp-jira:
+    image: python:3.12-slim
+    container_name: ds-mcp-jira
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bash -lc "pip install -r requirements.txt && uvicorn src.interfaces.mcp.jira.server:app --host 0.0.0.0 --port 8055 --reload"
+    ports: ["8055:8055"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://ds:ds@postgres:5432/ds_orchestrator
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8055/health', timeout=2).status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+  mcp-sql:
+    image: python:3.12-slim
+    container_name: ds-mcp-sql
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: bash -lc "pip install -r requirements.txt && uvicorn src.interfaces.mcp.sql.server:app --host 0.0.0.0 --port 8056 --reload"
+    ports: ["8056:8056"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://ds:ds@postgres:5432/ds_orchestrator
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8056/health', timeout=2).status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
 volumes:
   pgdata:
