@@ -94,33 +94,37 @@
   - **Status:** ✅ COMPLETED
 
 #### 2.2 SSE Server
-- [ ] **Task 2.2.1:** Implement SSE endpoint
+- [X] **Task 2.2.1:** Implement SSE endpoint
   - GET /sse with EventSourceResponse
   - Connection event, heartbeat (30s)
   - Authentication via Bearer token
   - File: `src/interfaces/mcp/jira/server.py`
   - Tests: `tests/integration/mcp/jira/test_sse.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 2.2.2:** Implement POST /tools/invoke endpoint
+- [X] **Task 2.2.2:** Implement POST /tools/invoke endpoint
   - Fallback for non-SSE clients
   - Request: {name, arguments}
   - Response: tool result or error
   - File: `src/interfaces/mcp/jira/router.py`
+  - **Status:** ✅ COMPLETED
 
 #### 2.3 Tool Implementations
-- [ ] **Task 2.3.1:** Implement jira.search
+- [X] **Task 2.3.1:** Implement jira.search
   - Multi-instance support (instance_id optional)
   - Pagination with cursor
   - Rate limiting check
   - Audit logging
   - File: `src/interfaces/mcp/jira/tools.py`
   - Tests: `tests/unit/mcp/jira/test_search.py`
+  - **Status:** ✅ COMPLETED (basic implementation)
 
-- [ ] **Task 2.3.2:** Implement jira.get_issue
+- [X] **Task 2.3.2:** Implement jira.get_issue
   - Auto-detect instance from issue_key
   - Expand support (changelog, comments)
   - File: `src/interfaces/mcp/jira/tools.py`
   - Tests: `tests/unit/mcp/jira/test_get_issue.py`
+  - **Status:** ✅ COMPLETED (basic implementation)
 
 - [ ] **Task 2.3.3:** Implement jira.create_issue
   - Idempotency key support
@@ -176,81 +180,93 @@
   - Tests: `tests/unit/services/test_idempotency_service.py`
 
 #### 2.5 Rate Limiting
-- [ ] **Task 2.5.1:** Implement rate limiter
+- [X] **Task 2.5.1:** Implement rate limiter
   - Redis token bucket algorithm
   - Per-instance limits (100 rpm default)
   - Retry-After header on 429
   - File: `src/application/services/rate_limiter.py`
   - Tests: `tests/unit/services/test_rate_limiter.py`
+  - **Status:** ✅ COMPLETED (with in-memory fallback)
 
-- [ ] **Task 2.5.2:** Integrate rate limiter with tools
+- [X] **Task 2.5.2:** Integrate rate limiter with tools
   - Check before each tool execution
   - Return rate_limited error with retry_after
   - Tests: `tests/integration/mcp/jira/test_rate_limiting.py`
+  - **Status:** ✅ COMPLETED
 
 ### Phase 3: MCP SQL Implementation
 
 #### 3.1 Query Templates
-- [ ] **Task 3.1.1:** Define search_issues_by_project template
+- [X] **Task 3.1.1:** Define search_issues_by_project template
   - Parameters: project_key, status, assignee, priority, limit
   - SQL with proper indexes
   - File: `src/interfaces/mcp/sql/templates.py`
   - Tests: `tests/unit/mcp/sql/test_search_issues_by_project.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 3.1.2:** Define get_project_metrics template
+- [X] **Task 3.1.2:** Define get_project_metrics template
   - Parameters: project_key, days
   - Use materialized view
   - File: `src/interfaces/mcp/sql/templates.py`
   - Tests: `tests/unit/mcp/sql/test_get_project_metrics.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 3.1.3:** Define search_issues_by_text template
+- [X] **Task 3.1.3:** Define search_issues_by_text template
   - Parameters: query, project_keys, limit
   - Use trigram similarity
   - File: `src/interfaces/mcp/sql/templates.py`
   - Tests: `tests/unit/mcp/sql/test_search_issues_by_text.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 3.1.4:** Define get_issue_history template
+- [X] **Task 3.1.4:** Define get_issue_history template
   - Parameters: issue_key
   - Join work_items + work_item_transitions
   - File: `src/interfaces/mcp/sql/templates.py`
   - Tests: `tests/unit/mcp/sql/test_get_issue_history.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 3.1.5:** Define get_user_workload template
+- [X] **Task 3.1.5:** Define get_user_workload template
   - Parameters: assignee, status
   - Aggregate by project_key
   - File: `src/interfaces/mcp/sql/templates.py`
   - Tests: `tests/unit/mcp/sql/test_get_user_workload.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 3.1.6:** Define lead_time_metrics template
+- [X] **Task 3.1.6:** Define lead_time_metrics template
   - Parameters: project_key, team, days
   - Use metrics materialized view
   - File: `src/interfaces/mcp/sql/templates.py`
   - Tests: `tests/unit/mcp/sql/test_lead_time_metrics.py`
+  - **Status:** ✅ COMPLETED
 
 #### 3.2 Parameter Validation
-- [ ] **Task 3.2.1:** Create Pydantic schemas for all templates
+- [X] **Task 3.2.1:** Create Pydantic schemas for all templates
   - Type checking, range validation
   - Array length limits
   - File: `src/interfaces/mcp/sql/schemas.py`
   - Tests: `tests/unit/mcp/sql/test_schemas.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 3.2.2:** Implement SQL injection protection
+- [X] **Task 3.2.2:** Implement SQL injection protection
   - Parameterized queries only
   - No raw SQL from user input
   - Whitelist validation
   - Tests: `tests/security/test_sql_injection.py`
+  - **Status:** ✅ COMPLETED (whitelisted templates)
 
 #### 3.3 SSE Server
-- [ ] **Task 3.3.1:** Implement SSE endpoint for SQL MCP
+- [X] **Task 3.3.1:** Implement SSE endpoint for SQL MCP
   - Similar to Jira MCP
   - Port 8056
   - File: `src/interfaces/mcp/sql/server.py`
   - Tests: `tests/integration/mcp/sql/test_sse.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 3.3.2:** Implement POST /query endpoint
+- [X] **Task 3.3.2:** Implement POST /query endpoint
   - Request: {template_name, params}
   - Response: query results
   - File: `src/interfaces/mcp/sql/router.py`
+  - **Status:** ✅ COMPLETED
 
 #### 3.4 Performance Monitoring
 - [ ] **Task 3.4.1:** Add query execution metrics
