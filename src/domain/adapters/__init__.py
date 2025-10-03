@@ -19,6 +19,7 @@ from .factory import AdapterRegistry, create_adapter
 from .github_adapter import GitHubAdapter
 from .jira_adapter import JiraAdapter
 from .asana_adapter import AsanaAdapter
+from .linear_adapter import LinearAdapter
 
 __all__ = [
     # Base classes and enums
@@ -35,6 +36,7 @@ __all__ = [
     "JiraAdapter",
     "GitHubAdapter",
     "AsanaAdapter",
+    "LinearAdapter",
     # Factory
     "AdapterRegistry",
     "create_adapter",

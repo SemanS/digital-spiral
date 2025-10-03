@@ -7,6 +7,7 @@ from .base import SourceAdapter, SourceType
 from .jira_adapter import JiraAdapter
 from .github_adapter import GitHubAdapter
 from .asana_adapter import AsanaAdapter
+from .linear_adapter import LinearAdapter
 
 
 class AdapterRegistry:
@@ -16,6 +17,7 @@ class AdapterRegistry:
         SourceType.JIRA: JiraAdapter,
         SourceType.GITHUB: GitHubAdapter,
         SourceType.ASANA: AsanaAdapter,
+        SourceType.LINEAR: LinearAdapter,
     }
 
     @classmethod
