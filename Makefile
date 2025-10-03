@@ -96,11 +96,18 @@ mcp-both:
 
 # Health checks
 health-check:
+	@./scripts/health_check.sh
+
+health-check-simple:
 	@echo "Checking MCP Jira..."
 	@curl -s http://localhost:8055/health | jq .
 	@echo ""
 	@echo "Checking MCP SQL..."
 	@curl -s http://localhost:8056/health | jq .
+
+# Coverage report
+coverage-report:
+	@./scripts/coverage_report.sh
 
 # Clean up
 clean:
