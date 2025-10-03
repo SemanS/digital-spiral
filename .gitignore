@@ -4,3 +4,39 @@ __pycache__/
 .pytest_cache/
 .env
 .venv/
+
+# Augment agent folder (may contain credentials)
+.augment/
+
+# Specify artifacts
+.specify/memory/
+
+# Database
+*.db
+*.db-journal
+artifacts/*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# MyPy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
