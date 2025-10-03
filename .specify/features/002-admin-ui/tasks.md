@@ -28,12 +28,12 @@ Create a new Next.js 15 project with TypeScript, Tailwind CSS, and App Router in
 5. Set up Git hooks with Husky
 
 **Acceptance Criteria**:
-- [X] Next.js project created in `admin-ui/` directory
-- [X] All dependencies installed
-- [X] ESLint and Prettier configured
-- [X] Git hooks set up
-- [X] `npm run dev` starts development server
-- [X] TypeScript strict mode enabled
+- [ ] Next.js project created in `admin-ui/` directory
+- [ ] All dependencies installed
+- [ ] ESLint and Prettier configured
+- [ ] Git hooks set up
+- [ ] `npm run dev` starts development server
+- [ ] TypeScript strict mode enabled
 
 ---
 
@@ -54,10 +54,10 @@ Initialize shadcn/ui and install all required components.
 4. Test a sample component
 
 **Acceptance Criteria**:
-- [X] shadcn/ui initialized
-- [X] All components installed in `components/ui/`
-- [X] `components.json` configured
-- [X] Sample component renders correctly
+- [ ] shadcn/ui initialized
+- [ ] All components installed in `components/ui/`
+- [ ] `components.json` configured
+- [ ] Sample component renders correctly
 
 ---
 
@@ -79,10 +79,10 @@ Set up environment variables for NextAuth, Google OAuth, and backend API.
 4. Document environment variables in README
 
 **Acceptance Criteria**:
-- [X] `.env.local` created with all variables
-- [X] `.env.example` created
-- [X] `.env.local` in `.gitignore`
-- [X] README documents environment variables
+- [ ] `.env.local` created with all variables
+- [ ] `.env.example` created
+- [ ] `.env.local` in `.gitignore`
+- [ ] README documents environment variables
 
 ---
 
@@ -106,12 +106,12 @@ Set up NextAuth v5 with Google OAuth provider and JWT session strategy.
 4. Test Google OAuth flow
 
 **Acceptance Criteria**:
-- [X] NextAuth configured with Google provider
-- [X] JWT session strategy enabled
-- [X] Session callback includes user role
-- [X] `/api/auth/signin` works
-- [X] Google OAuth flow completes successfully
-- [X] Session persists after refresh
+- [ ] NextAuth configured with Google provider
+- [ ] JWT session strategy enabled
+- [ ] Session callback includes user role
+- [ ] `/api/auth/signin` works
+- [ ] Google OAuth flow completes successfully
+- [ ] Session persists after refresh
 
 ---
 
@@ -133,11 +133,11 @@ Create middleware to protect `/admin` routes and check user roles.
 3. Test middleware with authenticated and unauthenticated users
 
 **Acceptance Criteria**:
-- [X] Middleware protects `/admin` routes
-- [X] Unauthenticated users redirected to login
-- [X] Non-admin users redirected to home
-- [X] Admin users can access `/admin` routes
-- [X] Middleware runs on all `/admin/*` routes
+- [ ] Middleware protects `/admin` routes
+- [ ] Unauthenticated users redirected to login
+- [ ] Non-admin users redirected to home
+- [ ] Admin users can access `/admin` routes
+- [ ] Middleware runs on all `/admin/*` routes
 
 ---
 
@@ -164,12 +164,12 @@ Create reusable layout components: Header, Sidebar, Footer.
 5. Style with Tailwind CSS
 
 **Acceptance Criteria**:
-- [X] Header component created with logo, nav, user menu
-- [X] Sidebar component created with navigation links
-- [X] Footer component created
-- [X] Dashboard layout uses all components
-- [X] Layout is responsive (mobile, tablet, desktop)
-- [X] Active link highlighted in sidebar
+- [ ] Header component created with logo, nav, user menu
+- [ ] Sidebar component created with navigation links
+- [ ] Footer component created
+- [ ] Dashboard layout uses all components
+- [ ] Layout is responsive (mobile, tablet, desktop)
+- [ ] Active link highlighted in sidebar
 
 ---
 
@@ -190,11 +190,11 @@ Configure TanStack Query for server state management.
 3. Test with a sample query
 
 **Acceptance Criteria**:
-- [X] QueryProvider created
-- [X] QueryClient configured with defaults (staleTime, cacheTime, retry)
-- [X] React Query DevTools visible in dev mode
-- [X] App wrapped in QueryProvider
-- [X] Sample query works
+- [ ] QueryProvider created
+- [ ] QueryClient configured with defaults (staleTime, cacheTime, retry)
+- [ ] React Query DevTools visible in dev mode
+- [ ] App wrapped in QueryProvider
+- [ ] Sample query works
 
 ---
 
@@ -219,12 +219,12 @@ Create a typed axios client with interceptors for authentication and error handl
 3. Test with sample request
 
 **Acceptance Criteria**:
-- [X] Axios client created with base URL
-- [X] Request interceptor adds auth token
-- [X] Response interceptor handles errors
-- [X] Retry logic works (3 retries with exponential backoff)
-- [X] Custom error types defined
-- [X] Sample request works
+- [ ] Axios client created with base URL
+- [ ] Request interceptor adds auth token
+- [ ] Response interceptor handles errors
+- [ ] Retry logic works (3 retries with exponential backoff)
+- [ ] Custom error types defined
+- [ ] Sample request works
 
 ---
 
@@ -246,11 +246,11 @@ Define all TypeScript interfaces for API requests and responses.
 2. Export all types
 
 **Acceptance Criteria**:
-- [X] All types defined in `lib/api/types.ts`
-- [X] Types match backend API schema
-- [X] All fields have correct types
-- [X] Optional fields marked with `?`
-- [X] Types exported
+- [ ] All types defined in `lib/api/types.ts`
+- [ ] Types match backend API schema
+- [ ] All fields have correct types
+- [ ] Optional fields marked with `?`
+- [ ] Types exported
 
 ---
 
@@ -275,11 +275,11 @@ Create Zod schemas for form validation.
 3. Add error messages for each field
 
 **Acceptance Criteria**:
-- [X] All schemas defined in `lib/schemas/instance.ts`
-- [X] Custom validators implemented
-- [X] Error messages defined for each field
-- [X] Schemas match TypeScript types
-- [X] Test schemas with valid and invalid data
+- [ ] All schemas defined in `lib/schemas/instance.ts`
+- [ ] Custom validators implemented
+- [ ] Error messages defined for each field
+- [ ] Schemas match TypeScript types
+- [ ] Test schemas with valid and invalid data
 
 ---
 
@@ -306,12 +306,12 @@ Create typed API functions for all instance operations.
 3. Handle errors with custom error types
 
 **Acceptance Criteria**:
-- [X] All API functions implemented
-- [X] Functions use axios client
-- [X] Functions return typed responses
-- [X] Errors handled with custom error types
-- [X] JSDoc comments added
-- [X] Test with mock server
+- [ ] All API functions implemented
+- [ ] Functions use axios client
+- [ ] Functions return typed responses
+- [ ] Errors handled with custom error types
+- [ ] JSDoc comments added
+- [ ] Test with mock server
 
 ---
 
@@ -342,12 +342,12 @@ Create custom hooks using TanStack Query for data fetching.
    - Use `useQuery` with polling (every 5 seconds)
 
 **Acceptance Criteria**:
-- [X] All hooks created
-- [X] Hooks use TanStack Query
-- [X] Mutations invalidate queries on success
-- [X] Polling works for sync status
-- [X] Hooks handle loading and error states
-- [X] Test hooks with mock data
+- [ ] All hooks created
+- [ ] Hooks use TanStack Query
+- [ ] Mutations invalidate queries on success
+- [ ] Polling works for sync status
+- [ ] Hooks handle loading and error states
+- [ ] Test hooks with mock data
 
 ---
 
@@ -372,12 +372,12 @@ Create the main instances list page with loading, error, and empty states.
 3. Add "Add Instance" button (top right)
 
 **Acceptance Criteria**:
-- [X] Page created at `/admin/instances`
-- [X] Loading state shows skeleton
-- [X] Error state shows message + retry button
-- [X] Empty state shows message + add button
-- [X] Instances table displayed when data loaded
-- [X] "Add Instance" button navigates to `/admin/instances/new`
+- [ ] Page created at `/admin/instances`
+- [ ] Loading state shows skeleton
+- [ ] Error state shows message + retry button
+- [ ] Empty state shows message + add button
+- [ ] Instances table displayed when data loaded
+- [ ] "Add Instance" button navigates to `/admin/instances/new`
 
 ---
 
@@ -400,13 +400,13 @@ Create a table component to display instances with actions.
 3. Add responsive design (horizontal scroll on mobile)
 
 **Acceptance Criteria**:
-- [X] Table component created
-- [X] All columns displayed correctly
-- [X] Status badge shows correct color
-- [X] Last sync shows relative time
-- [X] Actions dropdown works
-- [X] Table is responsive
-- [X] Row hover effect works
+- [ ] Table component created
+- [ ] All columns displayed correctly
+- [ ] Status badge shows correct color
+- [ ] Last sync shows relative time
+- [ ] Actions dropdown works
+- [ ] Table is responsive
+- [ ] Row hover effect works
 
 ---
 
@@ -426,12 +426,12 @@ Add search input and filter dropdowns for instances list.
 5. Update URL query params with filters
 
 **Acceptance Criteria**:
-- [X] Search input added (debounced)
-- [X] Status filter dropdown added
-- [X] Auth method filter dropdown added
-- [X] Filtering works correctly
-- [X] URL query params updated
-- [X] Filters persist on page refresh
+- [ ] Search input added (debounced)
+- [ ] Status filter dropdown added
+- [ ] Auth method filter dropdown added
+- [ ] Filtering works correctly
+- [ ] URL query params updated
+- [ ] Filters persist on page refresh
 
 ---
 
@@ -451,12 +451,12 @@ Add pagination for instances list (20 per page).
 5. Scroll to top on page change
 
 **Acceptance Criteria**:
-- [X] Pagination component added
-- [X] Page navigation works
-- [X] Total count displayed
-- [X] URL query params updated
-- [X] Scroll to top on page change
-- [X] Pagination persists on page refresh
+- [ ] Pagination component added
+- [ ] Page navigation works
+- [ ] Total count displayed
+- [ ] URL query params updated
+- [ ] Scroll to top on page change
+- [ ] Pagination persists on page refresh
 
 ---
 
@@ -481,12 +481,12 @@ Create the wizard layout with step indicator and navigation.
 4. Save progress to session storage
 
 **Acceptance Criteria**:
-- [X] Wizard page created at `/admin/instances/new`
-- [X] Step indicator shows current step
-- [X] Navigation buttons work
-- [X] Progress bar updates
-- [X] State saved to session storage
-- [X] Can navigate back and forth
+- [ ] Wizard page created at `/admin/instances/new`
+- [ ] Step indicator shows current step
+- [ ] Navigation buttons work
+- [ ] Progress bar updates
+- [ ] State saved to session storage
+- [ ] Can navigate back and forth
 
 ---
 
@@ -506,12 +506,12 @@ Implement the first step of the wizard (instance details).
 5. Save to wizard state on "Next"
 
 **Acceptance Criteria**:
-- [X] Form created with RHF
-- [X] All fields added
-- [X] Zod validation works
-- [X] Inline error messages displayed
-- [X] "Next" button disabled if invalid
-- [X] State saved on "Next"
+- [ ] Form created with RHF
+- [ ] All fields added
+- [ ] Zod validation works
+- [ ] Inline error messages displayed
+- [ ] "Next" button disabled if invalid
+- [ ] State saved on "Next"
 
 ---
 
@@ -531,12 +531,12 @@ Implement the second step of the wizard (authentication).
 5. Save to wizard state on "Next"
 
 **Acceptance Criteria**:
-- [X] Form created with RHF
-- [X] All fields added
-- [X] Auth method select works
-- [X] Password show/hide toggle works
-- [X] Zod validation works
-- [X] State saved on "Next"
+- [ ] Form created with RHF
+- [ ] All fields added
+- [ ] Auth method select works
+- [ ] Password show/hide toggle works
+- [ ] Zod validation works
+- [ ] State saved on "Next"
 
 ---
 
@@ -559,12 +559,12 @@ Implement the third step of the wizard (test connection).
 4. "Next" button enabled only if test successful
 
 **Acceptance Criteria**:
-- [X] Test connection button created
-- [X] Loading spinner shows during test
-- [X] Success result displayed (user info, rate limit)
-- [X] Error result displayed (detailed message)
-- [X] "Next" enabled only if test successful
-- [X] Can retry test
+- [ ] Test connection button created
+- [ ] Loading spinner shows during test
+- [ ] Success result displayed (user info, rate limit)
+- [ ] Error result displayed (detailed message)
+- [ ] "Next" enabled only if test successful
+- [ ] Can retry test
 
 ---
 
@@ -586,12 +586,12 @@ Implement the fourth step of the wizard (save instance).
 7. Show error message on error
 
 **Acceptance Criteria**:
-- [X] Summary displayed
-- [X] "Save" button works
-- [X] Loading spinner shows during save
-- [X] Success toast displayed
-- [X] Redirect to instances list on success
-- [X] Error message displayed on error
+- [ ] Summary displayed
+- [ ] "Save" button works
+- [ ] Loading spinner shows during save
+- [ ] Success toast displayed
+- [ ] Redirect to instances list on success
+- [ ] Error message displayed on error
 
 ---
 

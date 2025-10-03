@@ -7,3 +7,5 @@ rapidfuzz
 SQLAlchemy>=2.0
 psycopg[binary]>=3.1
 prometheus-client>=0.20
+openai>=1.0.0
+aiohttp>=3.9.0
