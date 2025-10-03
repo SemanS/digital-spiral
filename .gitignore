@@ -3,6 +3,9 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .env
+# Ignore env files anywhere in repo (but keep .env.example tracked)
+**/.env
+**/.env.local
 .venv/
 
 # Augment agent folder (may contain credentials)
@@ -40,3 +43,10 @@ coverage.xml
 
 # Ruff
 .ruff_cache/
+
+# Process IDs
+.backend.pid
+.admin-ui.pid
+
+# Virtual environment
+venv/

@@ -1385,11 +1385,16 @@ async def autocomplete(request: Request, autocomplete_req: AutocompleteRequest):
                 {"id": "user3", "name": "Bob Johnson", "email": "bob@example.com"},
             ]
 
-            query_lower = autocomplete_req.query.lower()
-            filtered = [
-                u for u in users
-                if query_lower in u["name"].lower() or query_lower in u["email"].lower()
-            ]
+            query_lower = autocomplete_req.query.lower() if autocomplete_req.query else ""
+
+            # If query is empty, return all users
+            if not query_lower:
+                filtered = users
+            else:
+                filtered = [
+                    u for u in users
+                    if query_lower in u["name"].lower() or query_lower in u["email"].lower()
+                ]
 
             return {
                 "suggestions": [
@@ -1433,7 +1438,12 @@ async def autocomplete(request: Request, autocomplete_req: AutocompleteRequest):
                 # Query each project separately to avoid JQL issues
                 for project_key in project_keys[:5]:  # Limit to first 5 projects for performance
                     try:
-                        jql = f"project = {project_key} AND text ~ \"{autocomplete_req.query}*\" ORDER BY updated DESC"
+                        # Build JQL based on query
+                        if autocomplete_req.query:
+                            jql = f"project = {project_key} AND text ~ \"{autocomplete_req.query}*\" ORDER BY updated DESC"
+                        else:
+                            # If no query, just get recent issues
+                            jql = f"project = {project_key} ORDER BY updated DESC"
 
                         result = await asyncio.to_thread(
                             adapter.search,

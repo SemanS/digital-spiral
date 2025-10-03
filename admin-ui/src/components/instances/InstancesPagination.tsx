@@ -93,7 +93,7 @@ export function InstancesPagination({
             }
             return (
               <Button
-                key={page}
+                key={`page-${page}-${index}`}
                 variant={currentPage === page ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => handlePageChange(page as number)}

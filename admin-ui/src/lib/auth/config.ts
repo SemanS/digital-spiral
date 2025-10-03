@@ -25,9 +25,12 @@ export const authConfig: NextAuthConfig = {
     error: '/auth/error',
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
+        token.email = user.email;
+        token.name = user.name;
+        token.picture = user.image;
         // In production, fetch role from database
         // For now, assign admin role to all users
         token.role = 'admin' as UserRole;
@@ -37,25 +40,30 @@ export const authConfig: NextAuthConfig = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
+        session.user.email = token.email as string;
+        session.user.name = token.name as string;
+        session.user.image = token.picture as string;
         session.user.role = (token.role as UserRole) || 'user';
       }
       return session;
     },
     async authorized({ auth, request }) {
       const { pathname } = request.nextUrl;
-      
+
       // Public routes
       if (pathname.startsWith('/auth')) {
         return true;
       }
-      
+
       // Protected routes require authentication
       if (pathname.startsWith('/admin')) {
         return !!auth?.user;
       }
-      
+
       return true;
     },
   },
+  debug: process.env.NODE_ENV === 'development',
+  trustHost: true,
 };
 

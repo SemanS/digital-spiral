@@ -96,11 +96,15 @@ from src.interfaces.rest.ai import router as ai_router
 from src.interfaces.rest.issues import router as issues_router
 from src.interfaces.rest.sync import router as sync_router
 from src.interfaces.rest.webhooks import router as webhooks_router
+from src.interfaces.rest.routers.instances import router as instances_router
+from src.interfaces.rest.routers.oauth import router as oauth_router
 
 app.include_router(ai_router)
 app.include_router(issues_router)
 app.include_router(sync_router)
 app.include_router(webhooks_router)
+app.include_router(instances_router)
+app.include_router(oauth_router)
 
 
 if __name__ == "__main__":
