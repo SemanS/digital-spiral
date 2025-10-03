@@ -258,11 +258,338 @@ async def jira_get_issue(
     )
 
 
+@register_tool("jira.create_issue")
+async def jira_create_issue(
+    params: JiraCreateIssueParams, context: MCPContext
+) -> JiraCreateIssueResponse:
+    """Create a new Jira issue.
+
+    Args:
+        params: Create issue parameters
+        context: MCP context
+
+    Returns:
+        Create response with issue details and audit log ID
+
+    Raises:
+        NotFoundError: If instance not found
+    """
+    from uuid import uuid4
+    from datetime import datetime, timezone
+
+    # Check idempotency
+    if params.idempotency_key:
+        is_duplicate, previous_result = await context.idempotency_service.check_and_store(
+            tenant_id=context.tenant_id,
+            operation="create_issue",
+            key=params.idempotency_key,
+        )
+        if is_duplicate and previous_result:
+            return JiraCreateIssueResponse(**previous_result)
+
+    # Get instance
+    instance = await _get_instance(context.session, context.tenant_id, params.instance_id)
+
+    # Rate limit check
+    if context.rate_limiter:
+        try:
+            await context.rate_limiter.check(instance.id)
+        except Exception as e:
+            raise MCPRateLimitError(
+                str(e), retry_after=getattr(e, "retry_after", 60)
+            )
+
+    # TODO: Implement actual Jira API call to create issue
+    # For now, create in database
+    new_issue = Issue(
+        id=uuid4(),
+        tenant_id=context.tenant_id,
+        instance_id=instance.id,
+        issue_key=f"{params.project_key}-{uuid4().hex[:4].upper()}",  # Temporary
+        issue_id=str(uuid4()),
+        summary=params.summary,
+        description=params.description_adf.get("content", "") if params.description_adf else None,
+        issue_type=params.issue_type_id,
+        status="Open",
+        priority="Medium",
+        custom_fields=params.fields or {},
+        raw_jsonb={},
+        jira_created_at=datetime.now(timezone.utc),
+        jira_updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    context.session.add(new_issue)
+    await context.session.flush()
+
+    # Create audit log
+    audit_log = await context.audit_log_service.log_create(
+        tenant_id=context.tenant_id,
+        resource_type="issue",
+        resource_id=new_issue.issue_key,
+        data={
+            "summary": params.summary,
+            "project_key": params.project_key,
+            "issue_type": params.issue_type_id,
+        },
+        user_id=context.user_id,
+        request_id=context.request_id,
+        metadata={"instance_id": str(instance.id)},
+    )
+
+    # Convert to response
+    issue_dict = {
+        "key": new_issue.issue_key,
+        "id": new_issue.issue_id,
+        "summary": new_issue.summary,
+        "status": new_issue.status,
+        "type": new_issue.issue_type,
+    }
+
+    response = JiraCreateIssueResponse(
+        issue=issue_dict,
+        instance_id=instance.id,
+        idempotency_key=params.idempotency_key,
+        audit_log_id=audit_log.id,
+    )
+
+    # Store idempotency result
+    if params.idempotency_key:
+        await context.idempotency_service.store(
+            tenant_id=context.tenant_id,
+            operation="create_issue",
+            key=params.idempotency_key,
+            result=response.dict(),
+            request_id=context.request_id,
+        )
+
+    return response
+
+
+@register_tool("jira.update_issue")
+async def jira_update_issue(
+    params: JiraUpdateIssueParams, context: MCPContext
+) -> Dict[str, Any]:
+    """Update a Jira issue.
+
+    Args:
+        params: Update issue parameters
+        context: MCP context
+
+    Returns:
+        Update response
+
+    Raises:
+        NotFoundError: If issue or instance not found
+    """
+    # Check idempotency
+    if params.idempotency_key:
+        is_duplicate, previous_result = await context.idempotency_service.check_and_store(
+            tenant_id=context.tenant_id,
+            operation="update_issue",
+            key=params.idempotency_key,
+        )
+        if is_duplicate and previous_result:
+            return previous_result
+
+    # Get instance
+    instance = await _get_instance(context.session, context.tenant_id, params.instance_id)
+
+    # Rate limit check
+    if context.rate_limiter:
+        try:
+            await context.rate_limiter.check(instance.id)
+        except Exception as e:
+            raise MCPRateLimitError(
+                str(e), retry_after=getattr(e, "retry_after", 60)
+            )
+
+    # Get issue
+    stmt = select(Issue).where(
+        Issue.tenant_id == context.tenant_id,
+        Issue.instance_id == instance.id,
+        Issue.issue_key == params.issue_key,
+    )
+
+    result = await context.session.execute(stmt)
+    issue = result.scalar_one_or_none()
+
+    if not issue:
+        raise NotFoundError(
+            f"Issue {params.issue_key} not found",
+            details={"issue_key": params.issue_key},
+        )
+
+    # Store before state
+    before = {
+        "summary": issue.summary,
+        "description": issue.description,
+        "status": issue.status,
+        "priority": issue.priority,
+    }
+
+    # Update fields
+    for field, value in params.fields.items():
+        if hasattr(issue, field):
+            setattr(issue, field, value)
+
+    from datetime import datetime, timezone
+    issue.updated_at = datetime.now(timezone.utc)
+    issue.jira_updated_at = datetime.now(timezone.utc)
+
+    await context.session.flush()
+
+    # Store after state
+    after = {
+        "summary": issue.summary,
+        "description": issue.description,
+        "status": issue.status,
+        "priority": issue.priority,
+    }
+
+    # Create audit log
+    await context.audit_log_service.log_update(
+        tenant_id=context.tenant_id,
+        resource_type="issue",
+        resource_id=issue.issue_key,
+        before=before,
+        after=after,
+        user_id=context.user_id,
+        request_id=context.request_id,
+        metadata={"instance_id": str(instance.id)},
+    )
+
+    response = {
+        "success": True,
+        "issue_key": issue.issue_key,
+        "updated_fields": list(params.fields.keys()),
+    }
+
+    # Store idempotency result
+    if params.idempotency_key:
+        await context.idempotency_service.store(
+            tenant_id=context.tenant_id,
+            operation="update_issue",
+            key=params.idempotency_key,
+            result=response,
+            request_id=context.request_id,
+        )
+
+    return response
+
+
+@register_tool("jira.transition_issue")
+async def jira_transition_issue(
+    params: JiraTransitionIssueParams, context: MCPContext
+) -> Dict[str, Any]:
+    """Transition a Jira issue to a new status.
+
+    Args:
+        params: Transition issue parameters
+        context: MCP context
+
+    Returns:
+        Transition response
+
+    Raises:
+        NotFoundError: If issue or instance not found
+    """
+    # Check idempotency
+    if params.idempotency_key:
+        is_duplicate, previous_result = await context.idempotency_service.check_and_store(
+            tenant_id=context.tenant_id,
+            operation="transition_issue",
+            key=params.idempotency_key,
+        )
+        if is_duplicate and previous_result:
+            return previous_result
+
+    # Get instance
+    instance = await _get_instance(context.session, context.tenant_id, params.instance_id)
+
+    # Rate limit check
+    if context.rate_limiter:
+        try:
+            await context.rate_limiter.check(instance.id)
+        except Exception as e:
+            raise MCPRateLimitError(
+                str(e), retry_after=getattr(e, "retry_after", 60)
+            )
+
+    # Get issue
+    stmt = select(Issue).where(
+        Issue.tenant_id == context.tenant_id,
+        Issue.instance_id == instance.id,
+        Issue.issue_key == params.issue_key,
+    )
+
+    result = await context.session.execute(stmt)
+    issue = result.scalar_one_or_none()
+
+    if not issue:
+        raise NotFoundError(
+            f"Issue {params.issue_key} not found",
+            details={"issue_key": params.issue_key},
+        )
+
+    # Store old status
+    old_status = issue.status
+
+    # Update status
+    issue.status = params.to_status
+    from datetime import datetime, timezone
+    issue.updated_at = datetime.now(timezone.utc)
+    issue.jira_updated_at = datetime.now(timezone.utc)
+
+    await context.session.flush()
+
+    # Create audit log
+    await context.audit_log_service.log(
+        tenant_id=context.tenant_id,
+        action="transition",
+        resource_type="issue",
+        resource_id=issue.issue_key,
+        changes={
+            "before": {"status": old_status},
+            "after": {"status": params.to_status},
+        },
+        user_id=context.user_id,
+        request_id=context.request_id,
+        metadata={
+            "instance_id": str(instance.id),
+            "comment": params.comment,
+        },
+    )
+
+    response = {
+        "success": True,
+        "issue_key": issue.issue_key,
+        "from_status": old_status,
+        "to_status": params.to_status,
+    }
+
+    # Store idempotency result
+    if params.idempotency_key:
+        await context.idempotency_service.store(
+            tenant_id=context.tenant_id,
+            operation="transition_issue",
+            key=params.idempotency_key,
+            result=response,
+            request_id=context.request_id,
+        )
+
+    return response
+
+
 __all__ = [
     "MCPContext",
     "TOOL_REGISTRY",
     "register_tool",
     "jira_search",
     "jira_get_issue",
+    "jira_create_issue",
+    "jira_update_issue",
+    "jira_transition_issue",
 ]
 
