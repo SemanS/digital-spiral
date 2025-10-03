@@ -36,6 +36,42 @@ Digital Spiral is a production-ready platform that integrates with Jira to provi
 
 ## ⚡ Quick Start
 
+### Option 1: Architecture Refactoring (Backend)
+
+Refactor Digital Spiral into clean architecture with multi-tenant Jira integration.
+
+```bash
+# Read documentation
+code .specify/features/001-architecture-refactoring/
+
+# Start with Phase 1
+# See QUICK_START_REFACTORING.md for detailed guide
+```
+
+**Documentation**:
+- [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md) - Complete overview
+- [QUICK_START_REFACTORING.md](QUICK_START_REFACTORING.md) - Step-by-step guide
+- [.specify/features/001-architecture-refactoring/](.specify/features/001-architecture-refactoring/) - Full spec
+
+### Option 2: Admin UI (Frontend)
+
+Build modern Admin UI for managing Jira instances with Next.js 15.
+
+```bash
+# Read documentation
+code .specify/features/002-admin-ui/
+
+# Start with Phase 1
+# See ADMIN_UI_QUICK_START.md for detailed guide
+```
+
+**Documentation**:
+- [ADMIN_UI_SUMMARY.md](ADMIN_UI_SUMMARY.md) - Complete overview
+- [ADMIN_UI_QUICK_START.md](ADMIN_UI_QUICK_START.md) - Step-by-step guide
+- [.specify/features/002-admin-ui/](.specify/features/002-admin-ui/) - Full spec
+
+### Option 3: Legacy Setup
+
 ```bash
 # Clone repository
 git clone https://github.com/SemanS/digital-spiral.git
@@ -212,6 +248,44 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 🤝 Contributing
 
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## 📚 Documentation
+
+### Spec-Driven Development (Spec-Kit)
+
+Digital Spiral uses [Spec-Kit](https://github.com/github/spec-kit) for structured development with AI agents (Auggie).
+
+#### Features
+
+**001: Architecture Refactoring** (Backend)
+- [Constitution](.specify/features/001-architecture-refactoring/constitution.md) - Project principles
+- [Specification](.specify/features/001-architecture-refactoring/spec.md) - Requirements
+- [Plan](.specify/features/001-architecture-refactoring/plan.md) - Implementation plan
+- [Tasks](.specify/features/001-architecture-refactoring/tasks.md) - 40+ tasks
+- [Quick Start](QUICK_START_REFACTORING.md) - Get started
+
+**002: Admin UI** (Frontend)
+- [Constitution](.specify/features/002-admin-ui/constitution.md) - Project principles
+- [Specification](.specify/features/002-admin-ui/spec.md) - Requirements
+- [Plan](.specify/features/002-admin-ui/plan.md) - Implementation plan
+- [Tasks](.specify/features/002-admin-ui/tasks.md) - 40+ tasks
+- [Quick Start](ADMIN_UI_QUICK_START.md) - Get started
+
+#### Auggie Commands
+
+Quick commands for AI-assisted development:
+- [admin-ui-setup.md](.augment/commands/admin-ui-setup.md) - Complete Admin UI setup
+- [admin-ui-phase1.md](.augment/commands/admin-ui-phase1.md) - Phase 1 only
+- [admin-ui-add-instance.md](.augment/commands/admin-ui-add-instance.md) - Add instance wizard
+
+### Legacy Documentation
+
+- [Quick Start Guide](docs/QUICK_START.md)
+- [API Examples](docs/API_EXAMPLES.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
+- [Forge App Development](docs/FORGE_APP_DEVELOPMENT.md)
+- [AI Assistant](docs/AI_ASSISTANT_README.md)
+- [Work Pulse](docs/PULSE_QUICKSTART.md)
 
 ## 📞 Support
 
