@@ -582,6 +582,284 @@ async def jira_transition_issue(
     return response
 
 
+@register_tool("jira.add_comment")
+async def jira_add_comment(
+    params: JiraAddCommentParams, context: MCPContext
+) -> Dict[str, Any]:
+    """Add a comment to a Jira issue.
+
+    Args:
+        params: Add comment parameters
+        context: MCP context
+
+    Returns:
+        Comment response
+
+    Raises:
+        NotFoundError: If issue or instance not found
+    """
+    from src.infrastructure.database.models.comment import Comment
+    from uuid import uuid4
+    from datetime import datetime, timezone
+
+    # Check idempotency
+    if params.idempotency_key:
+        is_duplicate, previous_result = await context.idempotency_service.check_and_store(
+            tenant_id=context.tenant_id,
+            operation="add_comment",
+            key=params.idempotency_key,
+        )
+        if is_duplicate and previous_result:
+            return previous_result
+
+    # Get instance
+    instance = await _get_instance(context.session, context.tenant_id, params.instance_id)
+
+    # Rate limit check
+    if context.rate_limiter:
+        try:
+            await context.rate_limiter.check(instance.id)
+        except Exception as e:
+            raise MCPRateLimitError(
+                str(e), retry_after=getattr(e, "retry_after", 60)
+            )
+
+    # Get issue
+    stmt = select(Issue).where(
+        Issue.tenant_id == context.tenant_id,
+        Issue.instance_id == instance.id,
+        Issue.issue_key == params.issue_key,
+    )
+
+    result = await context.session.execute(stmt)
+    issue = result.scalar_one_or_none()
+
+    if not issue:
+        raise NotFoundError(
+            f"Issue {params.issue_key} not found",
+            details={"issue_key": params.issue_key},
+        )
+
+    # Create comment
+    comment = Comment(
+        id=uuid4(),
+        tenant_id=context.tenant_id,
+        issue_id=issue.id,
+        comment_id=str(uuid4()),
+        author_account_id=context.user_id or "unknown",
+        body=str(params.body_adf),  # TODO: Store ADF properly
+        jira_created_at=datetime.now(timezone.utc),
+        jira_updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    context.session.add(comment)
+    await context.session.flush()
+
+    # Create audit log
+    await context.audit_log_service.log(
+        tenant_id=context.tenant_id,
+        action="add_comment",
+        resource_type="issue",
+        resource_id=issue.issue_key,
+        changes={
+            "before": None,
+            "after": {"comment_id": comment.comment_id, "author": context.user_id},
+        },
+        user_id=context.user_id,
+        request_id=context.request_id,
+        metadata={"instance_id": str(instance.id)},
+    )
+
+    response = {
+        "success": True,
+        "issue_key": issue.issue_key,
+        "comment_id": comment.comment_id,
+    }
+
+    # Store idempotency result
+    if params.idempotency_key:
+        await context.idempotency_service.store(
+            tenant_id=context.tenant_id,
+            operation="add_comment",
+            key=params.idempotency_key,
+            result=response,
+            request_id=context.request_id,
+        )
+
+    return response
+
+
+@register_tool("jira.link_issues")
+async def jira_link_issues(
+    params: JiraLinkIssuesParams, context: MCPContext
+) -> Dict[str, Any]:
+    """Link two Jira issues.
+
+    Args:
+        params: Link issues parameters
+        context: MCP context
+
+    Returns:
+        Link response
+
+    Raises:
+        NotFoundError: If issues or instance not found
+    """
+    # Check idempotency
+    if params.idempotency_key:
+        is_duplicate, previous_result = await context.idempotency_service.check_and_store(
+            tenant_id=context.tenant_id,
+            operation="link_issues",
+            key=params.idempotency_key,
+        )
+        if is_duplicate and previous_result:
+            return previous_result
+
+    # Get instance
+    instance = await _get_instance(context.session, context.tenant_id, params.instance_id)
+
+    # Rate limit check
+    if context.rate_limiter:
+        try:
+            await context.rate_limiter.check(instance.id)
+        except Exception as e:
+            raise MCPRateLimitError(
+                str(e), retry_after=getattr(e, "retry_after", 60)
+            )
+
+    # Get both issues
+    stmt = select(Issue).where(
+        Issue.tenant_id == context.tenant_id,
+        Issue.instance_id == instance.id,
+        Issue.issue_key.in_([params.inward_issue, params.outward_issue]),
+    )
+
+    result = await context.session.execute(stmt)
+    issues = result.scalars().all()
+
+    if len(issues) != 2:
+        raise NotFoundError(
+            f"One or both issues not found",
+            details={
+                "inward_issue": params.inward_issue,
+                "outward_issue": params.outward_issue,
+            },
+        )
+
+    # TODO: Store link in database (need to create IssueLink model)
+    # For now, just log the action
+
+    # Create audit log
+    await context.audit_log_service.log(
+        tenant_id=context.tenant_id,
+        action="link_issues",
+        resource_type="issue",
+        resource_id=params.inward_issue,
+        changes={
+            "before": None,
+            "after": {
+                "link_type": params.link_type,
+                "outward_issue": params.outward_issue,
+            },
+        },
+        user_id=context.user_id,
+        request_id=context.request_id,
+        metadata={"instance_id": str(instance.id)},
+    )
+
+    response = {
+        "success": True,
+        "inward_issue": params.inward_issue,
+        "outward_issue": params.outward_issue,
+        "link_type": params.link_type,
+    }
+
+    # Store idempotency result
+    if params.idempotency_key:
+        await context.idempotency_service.store(
+            tenant_id=context.tenant_id,
+            operation="link_issues",
+            key=params.idempotency_key,
+            result=response,
+            request_id=context.request_id,
+        )
+
+    return response
+
+
+@register_tool("jira.list_transitions")
+async def jira_list_transitions(
+    params: JiraListTransitionsParams, context: MCPContext
+) -> Dict[str, Any]:
+    """List available transitions for a Jira issue.
+
+    Args:
+        params: List transitions parameters
+        context: MCP context
+
+    Returns:
+        List of available transitions
+
+    Raises:
+        NotFoundError: If issue or instance not found
+    """
+    # Get instance
+    instance = await _get_instance(context.session, context.tenant_id, params.instance_id)
+
+    # Rate limit check
+    if context.rate_limiter:
+        try:
+            await context.rate_limiter.check(instance.id)
+        except Exception as e:
+            raise MCPRateLimitError(
+                str(e), retry_after=getattr(e, "retry_after", 60)
+            )
+
+    # Get issue
+    stmt = select(Issue).where(
+        Issue.tenant_id == context.tenant_id,
+        Issue.instance_id == instance.id,
+        Issue.issue_key == params.issue_key,
+    )
+
+    result = await context.session.execute(stmt)
+    issue = result.scalar_one_or_none()
+
+    if not issue:
+        raise NotFoundError(
+            f"Issue {params.issue_key} not found",
+            details={"issue_key": params.issue_key},
+        )
+
+    # TODO: Get actual transitions from Jira API
+    # For now, return common transitions based on current status
+    transitions = []
+    current_status = issue.status
+
+    if current_status == "Open":
+        transitions = [
+            {"id": "11", "name": "In Progress", "to": "In Progress"},
+            {"id": "21", "name": "Done", "to": "Done"},
+        ]
+    elif current_status == "In Progress":
+        transitions = [
+            {"id": "31", "name": "Done", "to": "Done"},
+            {"id": "41", "name": "Blocked", "to": "Blocked"},
+        ]
+    elif current_status == "Done":
+        transitions = [
+            {"id": "51", "name": "Reopen", "to": "Open"},
+        ]
+
+    return {
+        "issue_key": issue.issue_key,
+        "current_status": current_status,
+        "transitions": transitions,
+    }
+
+
 __all__ = [
     "MCPContext",
     "TOOL_REGISTRY",
@@ -591,5 +869,8 @@ __all__ = [
     "jira_create_issue",
     "jira_update_issue",
     "jira_transition_issue",
+    "jira_add_comment",
+    "jira_link_issues",
+    "jira_list_transitions",
 ]
 

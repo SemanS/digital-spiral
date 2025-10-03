@@ -13,6 +13,11 @@ from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.session import get_session
+from src.application.services.metrics_service import (
+    get_metrics_collector,
+    increment_counter,
+    Timer,
+)
 
 from .errors import MCPException
 from .tools import TOOL_REGISTRY, MCPContext
@@ -184,11 +189,18 @@ async def invoke_tool(
         # This is a simplified version - in production, you'd want proper schema validation
         params = body.arguments
 
-        # Execute tool
-        result = await tool_func(params, context)
+        # Track metrics
+        increment_counter("mcp.jira.tool.invocations", labels={"tool": body.name})
+
+        # Execute tool with timing
+        with Timer("mcp.jira.tool.duration", labels={"tool": body.name}):
+            result = await tool_func(params, context)
 
         # Commit transaction
         await session.commit()
+
+        # Track success
+        increment_counter("mcp.jira.tool.success", labels={"tool": body.name})
 
         return ToolInvokeResponse(
             result=result.dict() if hasattr(result, "dict") else result,
@@ -198,6 +210,7 @@ async def invoke_tool(
 
     except ValidationError as e:
         await session.rollback()
+        increment_counter("mcp.jira.tool.errors", labels={"tool": body.name, "error": "validation"})
         raise HTTPException(
             status_code=400,
             detail={
@@ -209,6 +222,7 @@ async def invoke_tool(
 
     except MCPException as e:
         await session.rollback()
+        increment_counter("mcp.jira.tool.errors", labels={"tool": body.name, "error": e.code.value})
         raise HTTPException(
             status_code=400,
             detail=e.to_error().dict(),
@@ -216,6 +230,7 @@ async def invoke_tool(
 
     except Exception as e:
         await session.rollback()
+        increment_counter("mcp.jira.tool.errors", labels={"tool": body.name, "error": "internal"})
         raise HTTPException(
             status_code=500,
             detail={
@@ -237,6 +252,17 @@ async def list_tools():
         "tools": list(TOOL_REGISTRY.keys()),
         "count": len(TOOL_REGISTRY),
     }
+
+
+@app.get("/metrics")
+async def get_metrics():
+    """Get metrics for MCP Jira server.
+
+    Returns:
+        Metrics data
+    """
+    collector = get_metrics_collector()
+    return collector.get_all_metrics()
 
 
 if __name__ == "__main__":

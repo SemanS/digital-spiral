@@ -13,6 +13,11 @@ from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infrastructure.database.session import get_session
+from src.application.services.metrics_service import (
+    get_metrics_collector,
+    increment_counter,
+    Timer,
+)
 
 from .templates import QUERY_TEMPLATES, execute_template
 
@@ -144,16 +149,24 @@ async def execute_query(
     params["tenant_id"] = str(tenant_id)
 
     try:
-        # Execute template
-        result = await execute_template(
-            session=session,
-            template_name=body.template_name,
-            params=params,
-        )
+        # Track metrics
+        increment_counter("mcp.sql.query.executions", labels={"template": body.template_name})
+
+        # Execute template with timing
+        with Timer("mcp.sql.query.duration", labels={"template": body.template_name}):
+            result = await execute_template(
+                session=session,
+                template_name=body.template_name,
+                params=params,
+            )
+
+        # Track success
+        increment_counter("mcp.sql.query.success", labels={"template": body.template_name})
 
         return result
 
     except ValidationError as e:
+        increment_counter("mcp.sql.query.errors", labels={"template": body.template_name, "error": "validation"})
         raise HTTPException(
             status_code=400,
             detail={
@@ -164,6 +177,7 @@ async def execute_query(
         )
 
     except ValueError as e:
+        increment_counter("mcp.sql.query.errors", labels={"template": body.template_name, "error": "invalid_template"})
         raise HTTPException(
             status_code=400,
             detail={
@@ -173,6 +187,7 @@ async def execute_query(
         )
 
     except Exception as e:
+        increment_counter("mcp.sql.query.errors", labels={"template": body.template_name, "error": "internal"})
         raise HTTPException(
             status_code=500,
             detail={
@@ -193,6 +208,17 @@ async def list_templates():
         "templates": list(QUERY_TEMPLATES.keys()),
         "count": len(QUERY_TEMPLATES),
     }
+
+
+@app.get("/metrics")
+async def get_metrics():
+    """Get metrics for MCP SQL server.
+
+    Returns:
+        Metrics data
+    """
+    collector = get_metrics_collector()
+    return collector.get_all_metrics()
 
 
 if __name__ == "__main__":
