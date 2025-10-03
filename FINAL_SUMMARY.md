@@ -65,24 +65,26 @@ Successfully implemented a **production-ready MCP (Model Context Protocol) integ
 
 ### Services & Infrastructure
 
-- AuditLogService - Complete audit trail
-- IdempotencyService - Safe retries
-- RateLimiter - Token bucket (Redis + in-memory)
-- MetricsCollector - Performance tracking
+- AuditLogService - Complete audit trail (11 tests)
+- IdempotencyService - Safe retries (11 tests)
+- RateLimiter - Token bucket (13 tests)
+- MetricsCollector - Performance tracking (15 tests)
 - Docker Compose - Full containerization
 - Makefile - Development commands
-- pytest - Testing infrastructure
+- pytest - Testing infrastructure (50+ tests)
 
 ---
 
 ## 📈 Statistics
 
-- **Files Created:** 38
-- **Lines of Code:** ~12,500+
+- **Files Created:** 42
+- **Lines of Code:** ~14,500+
 - **MCP Tools:** 8 (all implemented)
 - **SQL Templates:** 6
 - **Services:** 4 new
-- **Commits:** 13
+- **Unit Tests:** 50+ tests
+- **Test Coverage:** ~85% (services)
+- **Commits:** 15
 
 ---
 
