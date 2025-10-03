@@ -118,9 +118,78 @@ This document summarizes the initial implementation of the MCP & SQL Enhancement
     - `UpstreamError` (4xx/5xx)
   - Request ID tracking for tracing
 
-### 4. Documentation
+### 4. MCP Jira Server ✅
 
-#### 4.1 Feature Specification ✅
+#### 4.1 SSE Server
+- **File:** `src/interfaces/mcp/jira/server.py`
+- **Port:** 8055
+- **Features:**
+  - SSE endpoint with heartbeat (30s intervals)
+  - REST fallback endpoint (`POST /tools/invoke`)
+  - Header-based authentication (X-Tenant-ID, X-User-ID)
+  - Tool registry pattern
+  - Comprehensive error handling
+
+#### 4.2 Tool Implementations
+- **File:** `src/interfaces/mcp/jira/tools.py`
+- **Implemented Tools:**
+  - `jira.search` - Search issues with JQL
+  - `jira.get_issue` - Get issue details
+- **Features:**
+  - Rate limiting integration
+  - Auto-detect instance
+  - Query performance tracking
+  - MCPContext for dependency injection
+
+#### 4.3 Router
+- **File:** `src/interfaces/mcp/jira/router.py`
+- **Endpoints:**
+  - `GET /mcp/jira/sse` - SSE connection
+  - `POST /mcp/jira/tools/invoke` - Tool invocation
+  - `GET /mcp/jira/tools` - List available tools
+
+### 5. MCP SQL Server ✅
+
+#### 5.1 Query Templates
+- **File:** `src/interfaces/mcp/sql/templates.py`
+- **Templates:**
+  - `search_issues_by_project` - Filter by project, status, assignee
+  - `get_project_metrics` - Time-series metrics
+  - `search_issues_by_text` - Full-text search with trigram
+  - `get_issue_history` - Transition history
+  - `get_user_workload` - Workload by project
+  - `lead_time_metrics` - Lead time analytics
+
+#### 5.2 Parameter Validation
+- **File:** `src/interfaces/mcp/sql/schemas.py`
+- **Features:**
+  - Pydantic schemas for all templates
+  - Type checking and range validation
+  - SQL injection protection via whitelisting
+  - Regex validation for project keys
+
+#### 5.3 SSE Server
+- **File:** `src/interfaces/mcp/sql/server.py`
+- **Port:** 8056
+- **Endpoints:**
+  - `GET /sse` - SSE connection
+  - `POST /query` - Execute query template
+  - `GET /templates` - List available templates
+
+### 6. Rate Limiting Service ✅
+
+#### 6.1 Implementation
+- **File:** `src/application/services/rate_limiter.py`
+- **Features:**
+  - Token bucket algorithm
+  - Redis backend (production)
+  - In-memory backend (development)
+  - Configurable limits and windows
+  - Retry-after support
+
+### 7. Documentation ✅
+
+#### 7.1 Feature Specification
 - **Directory:** `.specify/features/003-mcp-sql-enhancement/`
 - **Files:**
   - `README.md` - Feature overview
@@ -134,6 +203,16 @@ This document summarizes the initial implementation of the MCP & SQL Enhancement
   - `INDEX.md` - Document index
   - `mcp-config.json` - MCP server configuration
 
+#### 7.2 MCP Documentation
+- **File:** `src/interfaces/mcp/README.md`
+- **Content:**
+  - Server overview and architecture
+  - API usage examples
+  - Authentication guide
+  - Error handling reference
+  - Rate limiting documentation
+  - Security considerations
+
 ## 📊 Progress Summary
 
 ### Completed
@@ -142,21 +221,25 @@ This document summarizes the initial implementation of the MCP & SQL Enhancement
 - ✅ Database migration
 - ✅ MCP Jira Pydantic schemas (all 11 schemas)
 - ✅ MCP error handling framework
+- ✅ MCP Jira SSE server (Port 8055)
+- ✅ MCP Jira tool implementations (jira.search, jira.get_issue)
+- ✅ Rate limiting service (Redis + in-memory)
+- ✅ MCP SQL server (Port 8056)
+- ✅ MCP SQL query templates (6 templates)
+- ✅ SQL parameter validation and injection protection
 - ✅ Feature documentation
 
 ### In Progress
-- 🔄 MCP Jira SSE server
-- 🔄 MCP Jira tool implementations
-- 🔄 Rate limiting service
+- 🔄 Additional MCP Jira tools (create, update, transition, etc.)
 - 🔄 Database indexes and performance optimization
+- 🔄 Testing (unit, integration, E2E)
 
 ### Not Started
-- ⏳ MCP SQL server
 - ⏳ Source adapters (GitHub, Asana)
 - ⏳ Admin API endpoints
 - ⏳ Admin UI components
 - ⏳ Observability (metrics, logging, tracing)
-- ⏳ E2E tests
+- ⏳ Comprehensive tests
 
 ## 🚀 Next Steps
 
@@ -261,13 +344,16 @@ This document summarizes the initial implementation of the MCP & SQL Enhancement
 
 ## 📈 Metrics
 
-- **Files Created:** 19
-- **Lines of Code:** ~5,140
+- **Files Created:** 29
+- **Lines of Code:** ~8,500+
 - **Models:** 2 new (AuditLog, IdempotencyKey)
-- **Services:** 2 new (AuditLogService, IdempotencyService)
-- **Schemas:** 11 Pydantic schemas
+- **Services:** 3 new (AuditLogService, IdempotencyService, RateLimiter)
+- **Schemas:** 18 Pydantic schemas (11 Jira + 7 SQL)
 - **Migrations:** 1 new migration
-- **Commits:** 2
+- **MCP Servers:** 2 (Jira on 8055, SQL on 8056)
+- **MCP Tools:** 2 implemented (jira.search, jira.get_issue)
+- **SQL Templates:** 6 query templates
+- **Commits:** 6
 
 ---
 
