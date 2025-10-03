@@ -718,11 +718,11 @@ Create a confirmation dialog for starting backfill.
 3. Trigger from "Backfill" button in Sync tab
 
 **Acceptance Criteria**:
-- [ ] Dialog created
-- [ ] Warning message displayed
-- [ ] "Start" button triggers backfill
-- [ ] "Cancel" button closes dialog
-- [ ] Dialog styled correctly
+- [X] Dialog created
+- [X] Warning message displayed
+- [X] "Start" button triggers backfill
+- [X] "Cancel" button closes dialog
+- [X] Dialog styled correctly
 
 ---
 
@@ -745,14 +745,14 @@ Display backfill progress with real-time updates.
 4. Close modal on completion
 
 **Acceptance Criteria**:
-- [ ] Progress modal created
-- [ ] Progress bar updates
-- [ ] ETA displayed
-- [ ] Detailed progress displayed
-- [ ] "Cancel" button works
-- [ ] Polling works (every 5 seconds)
-- [ ] Modal closes on completion
-- [ ] Success toast on completion
+- [X] Progress modal created
+- [X] Progress bar updates
+- [X] ETA displayed
+- [X] Detailed progress displayed
+- [X] "Cancel" button works
+- [X] Polling works (every 2 seconds)
+- [X] Modal closes on completion
+- [X] Success toast on completion
 
 ---
 
@@ -771,11 +771,11 @@ Implement incremental resync (similar to backfill but faster).
 4. Update watermark on completion
 
 **Acceptance Criteria**:
-- [ ] Resync button works
-- [ ] Progress modal displayed
-- [ ] Progress updates
-- [ ] Watermark updated on completion
-- [ ] Success toast on completion
+- [X] Resync button works
+- [X] Progress modal displayed
+- [X] Progress updates
+- [X] Watermark updated on completion
+- [X] Success toast on completion
 
 ---
 
@@ -798,12 +798,12 @@ Create edit page for updating instance configuration.
 6. Use `useUpdateInstance()` hook
 
 **Acceptance Criteria**:
-- [ ] Edit page created at `/admin/instances/[id]/edit`
-- [ ] Form pre-filled with current values
-- [ ] API token masked
-- [ ] "Save" button works
-- [ ] Success toast on save
-- [ ] Redirect to detail page on save
+- [X] Edit page created at `/admin/instances/[id]/edit`
+- [X] Form pre-filled with current values
+- [X] API token masked
+- [X] "Save" button works
+- [X] Success toast on save
+- [X] Redirect to detail page on save
 
 ---
 
@@ -823,12 +823,12 @@ Implement delete functionality with confirmation dialog.
 5. Redirect to instances list
 
 **Acceptance Criteria**:
-- [ ] Confirmation dialog created
-- [ ] Requires typing instance name
-- [ ] "Delete" button works
-- [ ] Success toast displayed
-- [ ] Redirect to instances list
-- [ ] Error message if delete fails
+- [X] Confirmation dialog created
+- [X] Requires typing instance name
+- [X] "Delete" button works
+- [X] Success toast displayed
+- [X] Redirect to instances list
+- [X] Error message if delete fails
 
 ---
 

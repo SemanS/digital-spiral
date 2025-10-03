@@ -8,6 +8,10 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { RefreshCw, Database, AlertCircle, Loader2 } from 'lucide-react';
 import { useSyncStatus } from '@/lib/hooks/useSyncStatus';
+import { useStartBackfill } from '@/lib/hooks/useStartBackfill';
+import { useStartResync } from '@/lib/hooks/useStartResync';
+import { BackfillConfirmDialog } from '../BackfillConfirmDialog';
+import { BackfillProgressModal } from '../BackfillProgressModal';
 import { formatDistanceToNow } from 'date-fns';
 
 interface InstanceSyncTabProps {
@@ -15,11 +19,17 @@ interface InstanceSyncTabProps {
 }
 
 export function InstanceSyncTab({ instanceId }: InstanceSyncTabProps) {
-  const [isPolling, setIsPolling] = useState(false);
-  const { data: syncStatus, isLoading, isError, error } = useSyncStatus(instanceId, {
+  const [showBackfillDialog, setShowBackfillDialog] = useState(false);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+
+  const { data: syncStatus, isLoading, isError, error, refetch } = useSyncStatus(instanceId, {
     enabled: true,
-    refetchInterval: isPolling ? 5000 : false,
+    refetchInterval: 5000, // Always poll for real-time updates
   });
+
+  const startBackfillMutation = useStartBackfill();
+  const startResyncMutation = useStartResync();
 
   const getStatusBadge = (status: string) => {
     const variants = {
@@ -42,13 +52,30 @@ export function InstanceSyncTab({ instanceId }: InstanceSyncTabProps) {
   };
 
   const handleBackfill = () => {
-    // This will be implemented in Phase 6
-    alert('Backfill functionality will be implemented in Phase 6');
+    setShowBackfillDialog(true);
+  };
+
+  const handleConfirmBackfill = () => {
+    startBackfillMutation.mutate(instanceId, {
+      onSuccess: (data) => {
+        setCurrentJobId(data.jobId);
+        setShowBackfillDialog(false);
+        setShowProgressModal(true);
+      },
+    });
   };
 
   const handleResync = () => {
-    // This will be implemented in Phase 6
-    alert('Resync functionality will be implemented in Phase 6');
+    startResyncMutation.mutate(instanceId, {
+      onSuccess: (data) => {
+        setCurrentJobId(data.jobId);
+        setShowProgressModal(true);
+      },
+    });
+  };
+
+  const handleProgressComplete = () => {
+    refetch();
   };
 
   if (isLoading) {
@@ -189,6 +216,22 @@ export function InstanceSyncTab({ instanceId }: InstanceSyncTabProps) {
           Resync
         </Button>
       </div>
+
+      {/* Backfill Confirmation Dialog */}
+      <BackfillConfirmDialog
+        open={showBackfillDialog}
+        onOpenChange={setShowBackfillDialog}
+        onConfirm={handleConfirmBackfill}
+        isLoading={startBackfillMutation.isPending}
+      />
+
+      {/* Backfill Progress Modal */}
+      <BackfillProgressModal
+        open={showProgressModal}
+        onOpenChange={setShowProgressModal}
+        jobId={currentJobId}
+        onComplete={handleProgressComplete}
+      />
     </div>
   );
 }
