@@ -8,6 +8,7 @@ from .jira_adapter import JiraAdapter
 from .github_adapter import GitHubAdapter
 from .asana_adapter import AsanaAdapter
 from .linear_adapter import LinearAdapter
+from .clickup_adapter import ClickUpAdapter
 
 
 class AdapterRegistry:
@@ -18,6 +19,7 @@ class AdapterRegistry:
         SourceType.GITHUB: GitHubAdapter,
         SourceType.ASANA: AsanaAdapter,
         SourceType.LINEAR: LinearAdapter,
+        SourceType.CLICKUP: ClickUpAdapter,
     }
 
     @classmethod
