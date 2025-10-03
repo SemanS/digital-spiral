@@ -273,6 +273,124 @@ class JiraCloudAdapter:
             json_body={"body": body},
         )
 
+    def get_comments(self, issue_key: str) -> dict[str, Any]:
+        """Get all comments for an issue.
+
+        Args:
+            issue_key: Issue key (e.g., "SCRUM-123")
+
+        Returns:
+            Dictionary with comments list
+        """
+        return self._call("GET", f"/rest/api/3/issue/{issue_key}/comment")
+
+    def delete_comment(self, issue_key: str, comment_id: str) -> None:
+        """Delete a comment from an issue.
+
+        Args:
+            issue_key: Issue key (e.g., "SCRUM-123")
+            comment_id: Comment ID to delete
+        """
+        self._call("DELETE", f"/rest/api/3/issue/{issue_key}/comment/{comment_id}")
+
+    def add_watcher(self, issue_key: str, account_id: str) -> None:
+        """Add a watcher to an issue.
+
+        Args:
+            issue_key: Issue key (e.g., "SCRUM-123")
+            account_id: User account ID
+        """
+        self._call(
+            "POST",
+            f"/rest/api/3/issue/{issue_key}/watchers",
+            json_body=account_id,
+            extra_headers={"Content-Type": "application/json"}
+        )
+
+    def get_watchers(self, issue_key: str) -> dict[str, Any]:
+        """Get all watchers for an issue.
+
+        Args:
+            issue_key: Issue key (e.g., "SCRUM-123")
+
+        Returns:
+            Dictionary with watchers list
+        """
+        return self._call("GET", f"/rest/api/3/issue/{issue_key}/watchers")
+
+    def remove_watcher(self, issue_key: str, account_id: str) -> None:
+        """Remove a watcher from an issue.
+
+        Args:
+            issue_key: Issue key (e.g., "SCRUM-123")
+            account_id: User account ID to remove
+        """
+        self._call("DELETE", f"/rest/api/3/issue/{issue_key}/watchers?accountId={account_id}")
+
+    def link_issues(self, inward_issue: str, outward_issue: str, link_type: str) -> dict[str, Any]:
+        """Link two issues together.
+
+        Args:
+            inward_issue: First issue key
+            outward_issue: Second issue key
+            link_type: Link type (e.g., 'Blocks', 'Relates', 'Duplicates')
+
+        Returns:
+            Dictionary with link result
+        """
+        return self._call(
+            "POST",
+            "/rest/api/3/issueLink",
+            json_body={
+                "type": {"name": link_type},
+                "inwardIssue": {"key": inward_issue},
+                "outwardIssue": {"key": outward_issue}
+            }
+        )
+
+    def get_issue_links(self, issue_key: str) -> list[dict[str, Any]]:
+        """Get all links for an issue.
+
+        Args:
+            issue_key: Issue key (e.g., "SCRUM-123")
+
+        Returns:
+            List of issue links
+        """
+        issue = self._call("GET", f"/rest/api/3/issue/{issue_key}", params={"fields": "issuelinks"})
+        return issue.get("fields", {}).get("issuelinks", [])
+
+    def search_users(self, query: str, max_results: int = 50) -> list[dict[str, Any]]:
+        """Search for users.
+
+        Args:
+            query: Search query (username, email, or display name)
+            max_results: Maximum number of results
+
+        Returns:
+            List of users
+        """
+        result = self._call(
+            "GET",
+            "/rest/api/3/user/search",
+            params={"query": query, "maxResults": max_results}
+        )
+        return result if isinstance(result, list) else []
+
+    def update_issue_field(self, issue_key: str, field_name: str, field_value: Any) -> None:
+        """Update a single field on an issue.
+
+        Args:
+            issue_key: Issue key (e.g., "SCRUM-123")
+            field_name: Field name (e.g., "priority", "labels", "description")
+            field_value: New field value
+        """
+        self._call(
+            "PUT",
+            f"/rest/api/3/issue/{issue_key}",
+            json_body={"fields": {field_name: field_value}}
+        )
+
     def transition_issue(self, issue_key: str, transition_id: str) -> None:
         """Transition an issue to a new status."""
         self._call(

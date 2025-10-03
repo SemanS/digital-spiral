@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Liter
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from rapidfuzz.distance import Levenshtein
 
@@ -38,6 +39,13 @@ try:
     PULSE_API_AVAILABLE = True
 except ImportError:
     PULSE_API_AVAILABLE = False
+
+# Import AI Assistant API router
+try:
+    from . import ai_assistant_api
+    AI_ASSISTANT_API_AVAILABLE = True
+except ImportError:
+    AI_ASSISTANT_API_AVAILABLE = False
 
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "http://localhost:9000")
 JIRA_TOKEN = os.getenv("JIRA_TOKEN", "mock-token")
@@ -151,6 +159,15 @@ app = FastAPI(title="Digital Spiral Orchestrator (Jira MVP)")
 # Include Pulse API router if available
 if PULSE_API_AVAILABLE:
     app.include_router(pulse_api.router)
+
+# Include AI Assistant API router if available
+if AI_ASSISTANT_API_AVAILABLE:
+    app.include_router(ai_assistant_api.router)
+
+# Mount static files for templates
+templates_static_path = Path(__file__).parent / "templates" / "static"
+if templates_static_path.exists():
+    app.mount("/v1/pulse/static", StaticFiles(directory=str(templates_static_path)), name="static")
 
 
 @app.get("/health")
