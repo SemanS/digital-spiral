@@ -614,12 +614,12 @@ Create the instance detail page with tabs.
 6. Add breadcrumbs
 
 **Acceptance Criteria**:
-- [ ] Page created at `/admin/instances/[id]`
-- [ ] Loading state shows skeleton
-- [ ] Error state shows 404 message
-- [ ] Tabs work correctly
-- [ ] Breadcrumbs show correct path
-- [ ] Active tab highlighted
+- [X] Page created at `/admin/instances/[id]`
+- [X] Loading state shows skeleton
+- [X] Error state shows 404 message
+- [X] Tabs work correctly
+- [X] Breadcrumbs show correct path
+- [X] Active tab highlighted
 
 ---
 
@@ -639,11 +639,11 @@ Display instance configuration in read-only format.
 5. Style with Tailwind CSS
 
 **Acceptance Criteria**:
-- [ ] All fields displayed
-- [ ] API token masked
-- [ ] "Edit" button navigates to edit page
-- [ ] "Delete" button shows confirmation dialog
-- [ ] Card styled correctly
+- [X] All fields displayed
+- [X] API token masked
+- [X] "Edit" button navigates to edit page
+- [X] "Delete" button shows confirmation dialog
+- [X] Card styled correctly
 
 ---
 
@@ -666,14 +666,14 @@ Display sync status and actions.
 3. Disable buttons if sync is running
 
 **Acceptance Criteria**:
-- [ ] Sync status card created
-- [ ] Status displayed correctly
-- [ ] Watermark displayed
-- [ ] Statistics displayed
-- [ ] "Backfill" button works
-- [ ] "Resync" button works
-- [ ] Buttons disabled if sync running
-- [ ] Polling works (every 5 seconds)
+- [X] Sync status card created
+- [X] Status displayed correctly
+- [X] Watermark displayed
+- [X] Statistics displayed
+- [X] "Backfill" button works
+- [X] "Resync" button works
+- [X] Buttons disabled if sync running
+- [X] Polling works (every 5 seconds)
 
 ---
 
@@ -692,11 +692,11 @@ Display sync history table.
 4. Add relative time for timestamps
 
 **Acceptance Criteria**:
-- [ ] History table created
-- [ ] All columns displayed
-- [ ] Pagination works
-- [ ] Relative time displayed
-- [ ] Empty state if no history
+- [X] History table created
+- [X] All columns displayed
+- [X] Pagination works
+- [X] Relative time displayed
+- [X] Empty state if no history
 
 ---
 
