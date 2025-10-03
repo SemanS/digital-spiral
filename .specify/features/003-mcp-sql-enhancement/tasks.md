@@ -10,24 +10,28 @@
   - Relationships: work_items, projects, users
   - Migration: `migrations/versions/xxx_add_source_instances.py`
   - Tests: `tests/unit/database/models/test_source_instance.py`
+  - **Note:** Using existing JiraInstance model for now, will enhance for multi-source later
 
 - [ ] **Task 1.1.2:** Enhance `work_items` model for multi-source
   - Add: source, source_id, source_key, instance_id (FK)
   - Update: custom_fields (JSONB), raw_payload (JSONB)
   - Migration: `migrations/versions/xxx_enhance_work_items.py`
   - Tests: `tests/unit/database/models/test_work_item.py`
+  - **Note:** Using existing Issue model for now, will enhance for multi-source later
 
-- [ ] **Task 1.1.3:** Create `audit_log` model
+- [X] **Task 1.1.3:** Create `audit_log` model
   - Fields: id, tenant_id, user_id, action, resource_type, resource_id, changes, timestamp
   - Indexes: tenant_id, timestamp, resource_type
-  - Migration: `migrations/versions/xxx_add_audit_log.py`
-  - Tests: `tests/unit/database/models/test_audit_log.py`
+  - Migration: `migrations/versions/5e27bebd242f_add_audit_log_and_idempotency_keys.py`
+  - Service: `src/application/services/audit_log_service.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 1.1.4:** Create `idempotency_keys` model
+- [X] **Task 1.1.4:** Create `idempotency_keys` model
   - Fields: id, tenant_id, key, operation, result, expires_at
   - Indexes: tenant_id + key (unique), expires_at
-  - Migration: `migrations/versions/xxx_add_idempotency_keys.py`
-  - Tests: `tests/unit/database/models/test_idempotency_key.py`
+  - Migration: `migrations/versions/5e27bebd242f_add_audit_log_and_idempotency_keys.py`
+  - Service: `src/application/services/idempotency_service.py`
+  - **Status:** ✅ COMPLETED
 
 #### 1.2 Database Indexes & Performance
 - [ ] **Task 1.2.1:** Add B-tree indexes
@@ -70,21 +74,24 @@
 ### Phase 2: MCP Jira Implementation
 
 #### 2.1 Pydantic Schemas
-- [ ] **Task 2.1.1:** Define input schemas for all tools
+- [X] **Task 2.1.1:** Define input schemas for all tools
   - JiraSearchParams, JiraGetIssueParams, JiraCreateIssueParams, etc.
   - Validators for JQL, issue keys, ADF format
   - File: `src/interfaces/mcp/jira/schemas.py`
   - Tests: `tests/unit/mcp/jira/test_schemas.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 2.1.2:** Define output schemas
+- [X] **Task 2.1.2:** Define output schemas
   - JiraSearchResponse, JiraIssueResponse, etc.
   - Include metadata: query_time_ms, instance_id
   - File: `src/interfaces/mcp/jira/schemas.py`
+  - **Status:** ✅ COMPLETED
 
-- [ ] **Task 2.1.3:** Define error schemas
+- [X] **Task 2.1.3:** Define error schemas
   - MCPError with code, message, details, retry_after
   - Error code enum: validation_error, rate_limited, etc.
   - File: `src/interfaces/mcp/jira/errors.py`
+  - **Status:** ✅ COMPLETED
 
 #### 2.2 SSE Server
 - [ ] **Task 2.2.1:** Implement SSE endpoint
