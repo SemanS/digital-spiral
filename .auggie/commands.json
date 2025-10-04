@@ -1,0 +1,125 @@
+{
+  "commands": [
+    {
+      "name": "constitution",
+      "description": "Create or update project governing principles and development guidelines",
+      "usage": "/constitution [description]",
+      "examples": [
+        "/constitution Create principles focused on code quality, testing standards, user experience consistency, and performance requirements"
+      ],
+      "script": ".specify/scripts/bash/create-constitution.sh",
+      "template": ".specify/memory/constitution.md"
+    },
+    {
+      "name": "specify",
+      "description": "Define what you want to build (requirements and user stories)",
+      "usage": "/specify [description]",
+      "examples": [
+        "/specify Build an application that can help me organize my photos in separate photo albums"
+      ],
+      "script": ".specify/scripts/bash/create-new-feature.sh",
+      "template": ".specify/templates/spec-template.md"
+    },
+    {
+      "name": "clarify",
+      "description": "Clarify underspecified areas (must be run before /plan unless explicitly skipped)",
+      "usage": "/clarify",
+      "examples": [
+        "/clarify"
+      ],
+      "notes": "Sequential, coverage-based questioning that records answers in a Clarifications section"
+    },
+    {
+      "name": "plan",
+      "description": "Create technical implementation plans with your chosen tech stack",
+      "usage": "/plan [tech stack description]",
+      "examples": [
+        "/plan The application uses Python 3.11+, FastAPI, PostgreSQL 14+, Redis 6+, Celery for background jobs"
+      ],
+      "script": ".specify/scripts/bash/setup-plan.sh",
+      "template": ".specify/templates/plan-template.md"
+    },
+    {
+      "name": "tasks",
+      "description": "Generate actionable task lists for implementation",
+      "usage": "/tasks",
+      "examples": [
+        "/tasks"
+      ],
+      "template": ".specify/templates/tasks-template.md"
+    },
+    {
+      "name": "analyze",
+      "description": "Cross-artifact consistency & coverage analysis (run after /tasks, before /implement)",
+      "usage": "/analyze",
+      "examples": [
+        "/analyze"
+      ],
+      "notes": "Validates that spec, plan, and tasks are consistent and complete"
+    },
+    {
+      "name": "implement",
+      "description": "Execute all tasks to build the feature according to the plan",
+      "usage": "/implement",
+      "examples": [
+        "/implement"
+      ],
+      "script": ".specify/scripts/bash/implement.sh",
+      "notes": "Executes tasks in order, respecting dependencies and parallel execution markers"
+    }
+  ],
+  "workflow": [
+    {
+      "step": 1,
+      "command": "/constitution",
+      "description": "Establish project principles",
+      "required": true
+    },
+    {
+      "step": 2,
+      "command": "/specify",
+      "description": "Define requirements and user stories",
+      "required": true
+    },
+    {
+      "step": 3,
+      "command": "/clarify",
+      "description": "Clarify underspecified areas",
+      "required": true,
+      "notes": "Can be skipped if explicitly stated"
+    },
+    {
+      "step": 4,
+      "command": "/plan",
+      "description": "Create technical implementation plan",
+      "required": true
+    },
+    {
+      "step": 5,
+      "command": "/tasks",
+      "description": "Generate task breakdown",
+      "required": true
+    },
+    {
+      "step": 6,
+      "command": "/analyze",
+      "description": "Validate consistency",
+      "required": false,
+      "notes": "Recommended before implementation"
+    },
+    {
+      "step": 7,
+      "command": "/implement",
+      "description": "Execute implementation",
+      "required": true
+    }
+  ],
+  "environment": {
+    "SPECIFY_FEATURE": {
+      "description": "Override feature detection for non-Git repositories",
+      "example": "004-llm-sql-analytics",
+      "notes": "Must be set in the context of the agent you're working with prior to using /plan or follow-up commands"
+    }
+  }
+}
+

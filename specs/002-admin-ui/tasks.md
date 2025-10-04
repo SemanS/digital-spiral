@@ -850,12 +850,12 @@ Write unit tests for API client, schemas, and utilities.
 5. Target: 80%+ coverage
 
 **Acceptance Criteria**:
-- [ ] API client tests written
-- [ ] Schema tests written
-- [ ] Utility tests written
-- [ ] Hook tests written
-- [ ] All tests passing
-- [ ] Coverage >80%
+- [X] API client tests written
+- [X] Schema tests written
+- [X] Utility tests written
+- [X] Hook tests written
+- [X] All tests passing
+- [X] Coverage >80%
 
 ---
 
@@ -876,12 +876,12 @@ Write component tests with React Testing Library.
 6. Test user interactions (click, type, submit)
 
 **Acceptance Criteria**:
-- [ ] InstancesTable tests written
-- [ ] InstanceFormWizard tests written
-- [ ] TestConnectionButton tests written
-- [ ] SyncStatusCard tests written
-- [ ] All tests passing
-- [ ] User interactions tested
+- [X] InstancesTable tests written
+- [X] InstanceFormWizard tests written
+- [X] TestConnectionButton tests written
+- [X] SyncStatusCard tests written
+- [X] All tests passing
+- [X] User interactions tested
 
 ---
 
@@ -901,12 +901,12 @@ Write E2E tests with Playwright.
 5. Run against local dev server
 
 **Acceptance Criteria**:
-- [ ] Add instance flow tested
-- [ ] Edit flow tested
-- [ ] Delete flow tested
-- [ ] Error scenarios tested
-- [ ] All tests passing
-- [ ] Tests run in CI/CD
+- [X] Add instance flow tested
+- [X] Edit flow tested
+- [X] Delete flow tested
+- [X] Error scenarios tested
+- [X] All tests passing
+- [X] Tests run in CI/CD
 
 ---
 
