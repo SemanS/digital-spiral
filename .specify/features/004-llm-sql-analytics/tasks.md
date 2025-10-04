@@ -80,13 +80,13 @@ Create SQLAlchemy models for all new tables with proper relationships and type h
 Create materialized views for pre-computed analytics: sprint stats with z-scores, issue comment stats.
 
 **Acceptance Criteria**:
-- [ ] `mv_sprint_stats_enriched` created with z-score calculations
-- [ ] `mv_issue_comment_stats` created with comment aggregations
-- [ ] Indexes created on materialized views
-- [ ] Refresh script created: `scripts/refresh_materialized_views.py`
-- [ ] Refresh schedule configured (cron or Celery beat)
-- [ ] Views return correct data (manual verification)
-- [ ] Query performance <1s for 10k sprints
+- [X] `mv_sprint_stats_enriched` created with z-score calculations
+- [X] `mv_issue_comment_stats` created with comment aggregations
+- [X] Indexes created on materialized views
+- [X] Refresh script created: `scripts/refresh_materialized_views.py`
+- [X] Refresh schedule configured (cron or Celery beat)
+- [X] Views return correct data (manual verification)
+- [X] Query performance <1s for 10k sprints
 
 **Files to Create**:
 - `migrations/versions/007_add_materialized_views.py`
