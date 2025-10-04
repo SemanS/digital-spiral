@@ -107,13 +107,13 @@ Create materialized views for pre-computed analytics: sprint stats with z-scores
 Write comprehensive unit tests for all new models with 90%+ coverage.
 
 **Acceptance Criteria**:
-- [ ] Test files created for all models
-- [ ] CRUD operations tested
-- [ ] Relationship tests (sprint ↔ sprint_issues)
-- [ ] Validation tests (unique constraints, foreign keys)
-- [ ] Edge cases tested (null values, cascades)
-- [ ] 90%+ test coverage: `pytest --cov=src/infrastructure/database/models/`
-- [ ] All tests pass: `pytest tests/unit/infrastructure/database/models/`
+- [X] Test files created for all models
+- [X] CRUD operations tested
+- [X] Relationship tests (sprint ↔ sprint_issues)
+- [X] Validation tests (unique constraints, foreign keys)
+- [X] Edge cases tested (null values, cascades)
+- [X] 90%+ test coverage: `pytest --cov=src/infrastructure/database/models/`
+- [X] All tests pass: `pytest tests/unit/infrastructure/database/models/`
 
 **Files to Create**:
 - `tests/unit/infrastructure/database/models/test_sprint.py`
