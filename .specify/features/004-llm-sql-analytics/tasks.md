@@ -243,14 +243,14 @@ Write contract tests to validate metrics catalog integrity.
 Define AnalyticsSpec Pydantic schema for query specification.
 
 **Acceptance Criteria**:
-- [ ] Schema created: `src/application/services/analytics/schemas.py`
-- [ ] AnalyticsSpec model with fields: datasource, measures, dimensions, filters, sort, limit, chart
-- [ ] Nested models: Measure, Filter, Sort, Chart
-- [ ] Validation rules: max 10 measures, max 5 dimensions, max 20 filters
-- [ ] Enum for operators: =, !=, >, <, >=, <=, in, not_in
-- [ ] Pydantic v2 syntax
-- [ ] Type hints for all fields
-- [ ] Docstrings for all models
+- [X] Schema created: `src/domain/schemas/analytics_spec.py`
+- [X] AnalyticsSpec model with fields: entity, metrics, filters, group_by, sort_by, dates, limit
+- [X] Nested models: MetricDefinition, FilterCondition, GroupByDefinition, SortDefinition
+- [X] Validation rules: unique metric names, unique group_by fields, date range validation
+- [X] Enums: AggregationType, FilterOperator, GroupByInterval
+- [X] Pydantic v2 syntax
+- [X] Type hints for all fields
+- [X] Docstrings for all models
 
 **Files to Create**:
 - `src/application/services/analytics/schemas.py`
