@@ -54,28 +54,28 @@ export function TestConnectionButton({
       case 'testing':
         return (
           <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
             Testing...
           </>
         );
       case 'success':
         return (
           <>
-            <CheckCircle2 className="mr-2 h-4 w-4" />
+            <CheckCircle2 className="mr-2 h-4 w-4" aria-hidden="true" />
             Success
           </>
         );
       case 'error':
         return (
           <>
-            <XCircle className="mr-2 h-4 w-4" />
+            <XCircle className="mr-2 h-4 w-4" aria-hidden="true" />
             Failed
           </>
         );
       default:
         return (
           <>
-            <TestTube className="mr-2 h-4 w-4" />
+            <TestTube className="mr-2 h-4 w-4" aria-hidden="true" />
             Test Connection
           </>
         );
@@ -99,6 +99,15 @@ export function TestConnectionButton({
       variant={getButtonVariant()}
       onClick={handleTest}
       disabled={testStatus === 'testing' || (!instanceId && !instanceData)}
+      data-testid="test-connection-button"
+      data-test-status={testStatus}
+      aria-label={
+        testStatus === 'testing' ? 'Testing connection...' :
+        testStatus === 'success' ? 'Connection test successful' :
+        testStatus === 'error' ? 'Connection test failed' :
+        'Test connection to Jira instance'
+      }
+      aria-disabled={testStatus === 'testing' || (!instanceId && !instanceData)}
     >
       {getButtonContent()}
     </Button>

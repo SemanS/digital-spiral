@@ -106,16 +106,38 @@ export default function InstancesPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6"
+      data-testid="instances-page"
+    >
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div
+        className="flex items-center justify-between"
+        data-testid="instances-page-header"
+      >
         <div>
-          <h1 className="text-3xl font-bold">Jira Instances</h1>
-          <p className="text-muted-foreground mt-2">Manage your Jira Cloud instances</p>
+          <h1
+            className="text-3xl font-bold"
+            data-testid="instances-page-title"
+          >
+            Jira Instances
+          </h1>
+          <p
+            className="text-muted-foreground mt-2"
+            data-testid="instances-page-description"
+          >
+            Manage your Jira Cloud instances
+          </p>
         </div>
-        <Button asChild>
-          <Link href="/admin/instances/new">
-            <Plus className="mr-2 h-4 w-4" />
+        <Button
+          asChild
+          data-testid="instances-add-button"
+        >
+          <Link
+            href="/admin/instances/new"
+            aria-label="Add new Jira instance"
+          >
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
             Add Instance
           </Link>
         </Button>
@@ -133,12 +155,24 @@ export default function InstancesPage() {
 
       {/* Error State */}
       {isError && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+        <Alert
+          variant="destructive"
+          data-testid="instances-error-alert"
+        >
+          <AlertCircle className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>
-            {error?.message || 'Failed to load instances. Please try again.'}
-            <Button variant="outline" size="sm" onClick={() => refetch()} className="ml-4">
+            <span data-testid="instances-error-message">
+              {error?.message || 'Failed to load instances. Please try again.'}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              className="ml-4"
+              data-testid="instances-error-retry-button"
+              aria-label="Retry loading instances"
+            >
               Retry
             </Button>
           </AlertDescription>
@@ -170,11 +204,25 @@ export default function InstancesPage() {
 
       {/* Empty State */}
       {!isLoading && !isError && data?.data.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground mb-4">No instances found</p>
-          <Button asChild>
-            <Link href="/admin/instances/new">
-              <Plus className="mr-2 h-4 w-4" />
+        <div
+          className="text-center py-12"
+          data-testid="instances-empty-state"
+        >
+          <p
+            className="text-muted-foreground mb-4"
+            data-testid="instances-empty-message"
+          >
+            No instances found
+          </p>
+          <Button
+            asChild
+            data-testid="instances-empty-add-button"
+          >
+            <Link
+              href="/admin/instances/new"
+              aria-label="Add your first Jira instance"
+            >
+              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
               Add Your First Instance
             </Link>
           </Button>
