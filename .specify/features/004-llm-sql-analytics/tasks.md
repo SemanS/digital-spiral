@@ -22,14 +22,14 @@ This document breaks down the implementation of Feature 004 into actionable task
 Create Alembic migration for new analytics tables: sprints, sprint_issues, metrics_catalog, analytics_jobs, analytics_cache.
 
 **Acceptance Criteria**:
-- [ ] Migration file created: `migrations/versions/006_add_analytics_tables.py`
-- [ ] All 5 tables created with correct columns and types
-- [ ] Foreign keys added with CASCADE delete
-- [ ] Indexes created for hot paths (tenant_id, instance_id, status, dates)
-- [ ] RLS policies applied for tenant isolation
-- [ ] Unique constraints added (instance_id + sprint_id, spec_hash)
-- [ ] Migration runs without errors: `alembic upgrade head`
-- [ ] Migration can be rolled back: `alembic downgrade -1`
+- [X] Migration file created: `migrations/versions/006_add_analytics_tables.py`
+- [X] All 5 tables created with correct columns and types
+- [X] Foreign keys added with CASCADE delete
+- [X] Indexes created for hot paths (tenant_id, instance_id, status, dates)
+- [X] RLS policies applied for tenant isolation
+- [X] Unique constraints added (instance_id + sprint_id, spec_hash)
+- [X] Migration runs without errors: `alembic upgrade head`
+- [X] Migration can be rolled back: `alembic downgrade -1`
 
 **Files to Create**:
 - `migrations/versions/006_add_analytics_tables.py`
