@@ -20,14 +20,14 @@ export async function middleware(request: NextRequest) {
 
     // Redirect to sign in if not authenticated
     if (!session?.user) {
-      const signInUrl = new URL('/api/auth/signin', request.url);
+      const signInUrl = new URL('/auth/signin', request.url);
       signInUrl.searchParams.set('callbackUrl', pathname);
       return NextResponse.redirect(signInUrl);
     }
 
     // Check if user has admin role
     if (session.user.role !== 'admin') {
-      return NextResponse.redirect(new URL('/', request.url));
+      return NextResponse.redirect(new URL('/auth/signin', request.url));
     }
   }
 

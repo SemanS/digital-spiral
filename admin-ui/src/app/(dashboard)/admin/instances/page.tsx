@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -19,15 +19,15 @@ export default function InstancesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Get initial values from URL
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  // Get initial values from URL - only once on mount
+  const [search, setSearch] = useState(() => searchParams.get('search') || '');
   const [status, setStatus] = useState<SyncStatusType | 'all'>(
-    (searchParams.get('status') as SyncStatusType) || 'all'
+    () => (searchParams.get('status') as SyncStatusType) || 'all'
   );
   const [authMethod, setAuthMethod] = useState<AuthMethod | 'all'>(
-    (searchParams.get('authMethod') as AuthMethod) || 'all'
+    () => (searchParams.get('authMethod') as AuthMethod) || 'all'
   );
-  const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
+  const [page, setPage] = useState(() => Number(searchParams.get('page')) || 1);
 
   // Fetch instances
   const { data, isLoading, isError, error, refetch } = useInstances({
@@ -41,40 +41,51 @@ export default function InstancesPage() {
   const deleteMutation = useDeleteInstance();
   const testConnectionMutation = useTestConnection();
 
+  // Update URL without causing re-render loop
+  const updateURL = useCallback((newParams: Record<string, string | number>) => {
+    const params = new URLSearchParams();
+
+    // Build params from current state + new params
+    const allParams = {
+      search,
+      status,
+      authMethod,
+      page,
+      ...newParams,
+    };
+
+    Object.entries(allParams).forEach(([key, value]) => {
+      if (value && value !== 'all' && value !== '') {
+        params.set(key, String(value));
+      }
+    });
+
+    router.replace(`/admin/instances?${params.toString()}`, { scroll: false });
+  }, [router, search, status, authMethod, page]);
+
   const handleSearchChange = (newSearch: string) => {
     setSearch(newSearch);
     setPage(1);
-    updateURL({ search: newSearch, page: 1 });
   };
 
   const handleStatusChange = (newStatus: SyncStatusType | 'all') => {
     setStatus(newStatus);
     setPage(1);
-    updateURL({ status: newStatus, page: 1 });
   };
 
   const handleAuthMethodChange = (newAuthMethod: AuthMethod | 'all') => {
     setAuthMethod(newAuthMethod);
     setPage(1);
-    updateURL({ authMethod: newAuthMethod, page: 1 });
   };
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
-    updateURL({ page: newPage });
   };
 
-  const updateURL = (params: Record<string, string | number>) => {
-    const newParams = new URLSearchParams(searchParams.toString());
-    Object.entries(params).forEach(([key, value]) => {
-      if (value && value !== 'all') {
-        newParams.set(key, String(value));
-      } else {
-        newParams.delete(key);
-      }
-    });
-    router.push(`/admin/instances?${newParams.toString()}`);
-  };
+  // Update URL when state changes
+  useEffect(() => {
+    updateURL({});
+  }, [search, status, authMethod, page]);
 
   const handleDelete = (id: string) => {
     if (confirm('Are you sure you want to delete this instance?')) {

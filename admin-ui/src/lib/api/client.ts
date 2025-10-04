@@ -21,12 +21,22 @@ class ApiClient {
   private setupInterceptors() {
     // Request interceptor
     this.client.interceptors.request.use(
-      (config: InternalAxiosRequestConfig) => {
-        // Add auth token if available
+      async (config: InternalAxiosRequestConfig) => {
+        // Add NextAuth session token if available
         if (typeof window !== 'undefined') {
-          const token = localStorage.getItem('auth_token');
-          if (token && config.headers) {
-            config.headers.Authorization = `Bearer ${token}`;
+          try {
+            // Get session from NextAuth
+            const response = await fetch('/api/auth/session');
+            const session = await response.json();
+
+            if (session?.user?.email && config.headers) {
+              // Add user email to headers for backend to identify user
+              config.headers['X-User-Email'] = session.user.email;
+              config.headers['X-User-Id'] = session.user.id || '';
+              config.headers['X-User-Name'] = session.user.name || '';
+            }
+          } catch (error) {
+            console.error('Failed to get session:', error);
           }
         }
         return config;

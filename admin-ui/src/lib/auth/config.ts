@@ -41,21 +41,7 @@ export const authConfig: NextAuthConfig = {
       }
       return session;
     },
-    async authorized({ auth, request }) {
-      const { pathname } = request.nextUrl;
-      
-      // Public routes
-      if (pathname.startsWith('/auth')) {
-        return true;
-      }
-      
-      // Protected routes require authentication
-      if (pathname.startsWith('/admin')) {
-        return !!auth?.user;
-      }
-      
-      return true;
-    },
   },
+  trustHost: true,
 };
 

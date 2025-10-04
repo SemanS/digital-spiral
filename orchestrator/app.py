@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Literal, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -46,6 +47,13 @@ try:
     AI_ASSISTANT_API_AVAILABLE = True
 except ImportError:
     AI_ASSISTANT_API_AVAILABLE = False
+
+# Import Admin API router
+try:
+    from . import admin_api
+    ADMIN_API_AVAILABLE = True
+except ImportError:
+    ADMIN_API_AVAILABLE = False
 
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "http://localhost:9000")
 JIRA_TOKEN = os.getenv("JIRA_TOKEN", "mock-token")
@@ -156,6 +164,19 @@ class ApplyIn(BaseModel):
 
 app = FastAPI(title="Digital Spiral Orchestrator (Jira MVP)")
 
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # Admin UI
+        "http://localhost:3001",
+        "http://localhost:3002",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Include Pulse API router if available
 if PULSE_API_AVAILABLE:
     app.include_router(pulse_api.router)
@@ -163,6 +184,10 @@ if PULSE_API_AVAILABLE:
 # Include AI Assistant API router if available
 if AI_ASSISTANT_API_AVAILABLE:
     app.include_router(ai_assistant_api.router)
+
+# Include Admin API router if available
+if ADMIN_API_AVAILABLE:
+    app.include_router(admin_api.router)
 
 # Mount static files for templates
 templates_static_path = Path(__file__).parent / "templates" / "static"

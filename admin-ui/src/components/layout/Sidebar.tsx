@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Database, Settings, FileText, LayoutDashboard } from 'lucide-react';
+import { Database, Settings, FileText, LayoutDashboard, Bot } from 'lucide-react';
 
 const navigation = [
   {
@@ -15,6 +15,11 @@ const navigation = [
     name: 'Instances',
     href: '/admin/instances',
     icon: Database,
+  },
+  {
+    name: 'Assistant',
+    href: '/admin/assistant',
+    icon: Bot,
   },
   {
     name: 'Settings',
