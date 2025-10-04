@@ -266,14 +266,14 @@ Define AnalyticsSpec Pydantic schema for query specification.
 Build validator to check AnalyticsSpec against metrics catalog.
 
 **Acceptance Criteria**:
-- [ ] Validator created: `src/application/services/analytics/validator.py`
-- [ ] Validates measures exist in catalog
-- [ ] Validates dimensions are valid columns
-- [ ] Validates filters use whitelisted operators
-- [ ] Validates limit is within bounds (1-1000 interactive, 1-100000 jobs)
-- [ ] Returns detailed error messages
-- [ ] Async validation
-- [ ] Type hints for all methods
+- [X] Validator created: `src/application/services/analytics/validator.py`
+- [X] Validates metrics exist and have valid fields
+- [X] Validates dimensions/columns are valid for entity
+- [X] Validates filters use whitelisted operators
+- [X] Validates limit is within bounds (1-1000 interactive, 1-100000 jobs)
+- [X] Returns detailed error messages and warnings
+- [X] Async validation
+- [X] Type hints for all methods
 
 **Files to Create**:
 - `src/application/services/analytics/validator.py`

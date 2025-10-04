@@ -5,6 +5,7 @@ from .query_builder import QueryBuilder
 from .analytics_executor import AnalyticsExecutor
 from .cache_service import CacheService
 from .analytics_service import AnalyticsService
+from .validator import AnalyticsSpecValidator
 
 __all__ = [
     "MetricsCatalogService",
@@ -12,5 +13,6 @@ __all__ = [
     "AnalyticsExecutor",
     "CacheService",
     "AnalyticsService",
+    "AnalyticsSpecValidator",
 ]
 
