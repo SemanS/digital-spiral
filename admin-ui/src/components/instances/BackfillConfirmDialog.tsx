@@ -27,19 +27,27 @@ export function BackfillConfirmDialog({
 }: BackfillConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent data-testid="backfill-confirm-dialog">
         <DialogHeader>
-          <DialogTitle>Start Full Backfill</DialogTitle>
-          <DialogDescription>
+          <DialogTitle data-testid="backfill-dialog-title">
+            Start Full Backfill
+          </DialogTitle>
+          <DialogDescription data-testid="backfill-dialog-description">
             This will sync all historical data from your Jira instance
           </DialogDescription>
         </DialogHeader>
 
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
+        <Alert
+          variant="destructive"
+          data-testid="backfill-warning-alert"
+        >
+          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Warning</AlertTitle>
           <AlertDescription>
-            <ul className="list-disc list-inside space-y-1 mt-2">
+            <ul
+              className="list-disc list-inside space-y-1 mt-2"
+              data-testid="backfill-warning-list"
+            >
               <li>This process can take several hours depending on your data size</li>
               <li>It will sync all projects, issues, comments, and attachments</li>
               <li>The instance will be in "syncing" state during this time</li>
@@ -49,10 +57,22 @@ export function BackfillConfirmDialog({
         </Alert>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isLoading}
+            data-testid="backfill-cancel-button"
+            aria-label="Cancel backfill"
+          >
             Cancel
           </Button>
-          <Button onClick={onConfirm} disabled={isLoading}>
+          <Button
+            onClick={onConfirm}
+            disabled={isLoading}
+            data-testid="backfill-confirm-button"
+            aria-label="Confirm and start backfill"
+            aria-disabled={isLoading}
+          >
             {isLoading ? 'Starting...' : 'Start Backfill'}
           </Button>
         </DialogFooter>

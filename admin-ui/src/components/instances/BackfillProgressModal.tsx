@@ -62,15 +62,39 @@ export function BackfillProgressModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        data-testid="backfill-progress-modal"
+      >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {isCompleted && <CheckCircle2 className="h-5 w-5 text-green-500" />}
-            {isFailed && <XCircle className="h-5 w-5 text-destructive" />}
-            {isRunning && <Loader2 className="h-5 w-5 animate-spin" />}
+          <DialogTitle
+            className="flex items-center gap-2"
+            data-testid="backfill-progress-title"
+          >
+            {isCompleted && (
+              <CheckCircle2
+                className="h-5 w-5 text-green-500"
+                data-testid="backfill-status-completed-icon"
+                aria-hidden="true"
+              />
+            )}
+            {isFailed && (
+              <XCircle
+                className="h-5 w-5 text-destructive"
+                data-testid="backfill-status-failed-icon"
+                aria-hidden="true"
+              />
+            )}
+            {isRunning && (
+              <Loader2
+                className="h-5 w-5 animate-spin"
+                data-testid="backfill-status-running-icon"
+                aria-hidden="true"
+              />
+            )}
             Backfill Progress
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription data-testid="backfill-progress-description">
             {isCompleted && 'Backfill completed successfully'}
             {isFailed && 'Backfill failed'}
             {isRunning && 'Syncing data from Jira...'}
@@ -78,35 +102,60 @@ export function BackfillProgressModal({
         </DialogHeader>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <div
+            className="flex items-center justify-center py-8"
+            data-testid="backfill-progress-loading"
+          >
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-hidden="true" />
           </div>
         ) : progress ? (
-          <div className="space-y-4">
+          <div
+            className="space-y-4"
+            data-testid="backfill-progress-content"
+          >
             {/* Overall Progress */}
-            <div className="space-y-2">
+            <div
+              className="space-y-2"
+              data-testid="backfill-overall-progress"
+            >
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium">Overall Progress</span>
-                <span className="text-muted-foreground">
+                <span
+                  className="text-muted-foreground"
+                  data-testid="backfill-overall-percentage"
+                >
                   {progress.progress.percentage}%
                 </span>
               </div>
-              <Progress value={progress.progress.percentage} />
+              <Progress
+                value={progress.progress.percentage}
+                data-testid="backfill-overall-progress-bar"
+                aria-label={`Overall progress: ${progress.progress.percentage}%`}
+              />
               {progress.progress.eta && (
-                <p className="text-xs text-muted-foreground">
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="backfill-eta"
+                >
                   Estimated time remaining: {progress.progress.eta}
                 </p>
               )}
             </div>
 
             {/* Detailed Progress */}
-            <div className="space-y-3 pt-4 border-t">
+            <div
+              className="space-y-3 pt-4 border-t"
+              data-testid="backfill-detailed-progress"
+            >
               <p className="text-sm font-medium">Detailed Progress</p>
-              
-              <div className="space-y-2">
+
+              <div
+                className="space-y-2"
+                data-testid="backfill-projects-progress"
+              >
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Projects</span>
-                  <span>
+                  <span data-testid="backfill-projects-count">
                     {progress.progress.projects.completed} / {progress.progress.projects.total}
                   </span>
                 </div>
@@ -115,13 +164,18 @@ export function BackfillProgressModal({
                     (progress.progress.projects.completed / progress.progress.projects.total) * 100
                   }
                   className="h-2"
+                  data-testid="backfill-projects-progress-bar"
+                  aria-label={`Projects: ${progress.progress.projects.completed} of ${progress.progress.projects.total}`}
                 />
               </div>
 
-              <div className="space-y-2">
+              <div
+                className="space-y-2"
+                data-testid="backfill-issues-progress"
+              >
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Issues</span>
-                  <span>
+                  <span data-testid="backfill-issues-count">
                     {progress.progress.issues.completed.toLocaleString()} /{' '}
                     {progress.progress.issues.total.toLocaleString()}
                   </span>
@@ -129,13 +183,18 @@ export function BackfillProgressModal({
                 <Progress
                   value={(progress.progress.issues.completed / progress.progress.issues.total) * 100}
                   className="h-2"
+                  data-testid="backfill-issues-progress-bar"
+                  aria-label={`Issues: ${progress.progress.issues.completed} of ${progress.progress.issues.total}`}
                 />
               </div>
 
-              <div className="space-y-2">
+              <div
+                className="space-y-2"
+                data-testid="backfill-comments-progress"
+              >
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Comments</span>
-                  <span>
+                  <span data-testid="backfill-comments-count">
                     {progress.progress.comments.completed.toLocaleString()} /{' '}
                     {progress.progress.comments.total.toLocaleString()}
                   </span>
@@ -145,25 +204,39 @@ export function BackfillProgressModal({
                     (progress.progress.comments.completed / progress.progress.comments.total) * 100
                   }
                   className="h-2"
+                  data-testid="backfill-comments-progress-bar"
+                  aria-label={`Comments: ${progress.progress.comments.completed} of ${progress.progress.comments.total}`}
                 />
               </div>
             </div>
 
             {/* Timestamps */}
             {progress.startedAt && (
-              <div className="pt-4 border-t text-xs text-muted-foreground">
-                <p>Started: {new Date(progress.startedAt).toLocaleString()}</p>
+              <div
+                className="pt-4 border-t text-xs text-muted-foreground"
+                data-testid="backfill-timestamps"
+              >
+                <p data-testid="backfill-started-at">
+                  Started: {new Date(progress.startedAt).toLocaleString()}
+                </p>
                 {progress.completedAt && (
-                  <p>Completed: {new Date(progress.completedAt).toLocaleString()}</p>
+                  <p data-testid="backfill-completed-at">
+                    Completed: {new Date(progress.completedAt).toLocaleString()}
+                  </p>
                 )}
               </div>
             )}
 
             {/* Error */}
             {isFailed && progress.error && (
-              <Alert variant="destructive">
-                <XCircle className="h-4 w-4" />
-                <AlertDescription>{progress.error}</AlertDescription>
+              <Alert
+                variant="destructive"
+                data-testid="backfill-error-alert"
+              >
+                <XCircle className="h-4 w-4" aria-hidden="true" />
+                <AlertDescription data-testid="backfill-error-message">
+                  {progress.error}
+                </AlertDescription>
               </Alert>
             )}
           </div>
@@ -175,11 +248,20 @@ export function BackfillProgressModal({
               variant="outline"
               onClick={handleCancel}
               disabled={cancelMutation.isPending}
+              data-testid="backfill-cancel-button"
+              aria-label="Cancel backfill operation"
+              aria-disabled={cancelMutation.isPending}
             >
               {cancelMutation.isPending ? 'Cancelling...' : 'Cancel Backfill'}
             </Button>
           ) : (
-            <Button onClick={() => onOpenChange(false)}>Close</Button>
+            <Button
+              onClick={() => onOpenChange(false)}
+              data-testid="backfill-close-button"
+              aria-label="Close progress modal"
+            >
+              Close
+            </Button>
           )}
         </DialogFooter>
       </DialogContent>
