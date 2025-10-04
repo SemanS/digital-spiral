@@ -44,7 +44,10 @@ export function InstancesTable({ instances, onDelete, onTestConnection }: Instan
     };
 
     return (
-      <Badge variant={variants[status] || 'default'}>
+      <Badge
+        variant={variants[status] || 'default'}
+        data-testid={`instance-status-badge-${status}`}
+      >
         {labels[status] || status}
       </Badge>
     );
@@ -64,10 +67,13 @@ export function InstancesTable({ instances, onDelete, onTestConnection }: Instan
   };
 
   return (
-    <div className="rounded-md border">
+    <div
+      className="rounded-md border"
+      data-testid="instances-table"
+    >
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow data-testid="instances-table-header">
             <TableHead>Name</TableHead>
             <TableHead>Base URL</TableHead>
             <TableHead>Auth Method</TableHead>
@@ -76,68 +82,101 @@ export function InstancesTable({ instances, onDelete, onTestConnection }: Instan
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody data-testid="instances-table-body">
           {instances.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+            <TableRow data-testid="instances-table-empty">
+              <TableCell
+                colSpan={6}
+                className="text-center text-muted-foreground py-8"
+                data-testid="instances-table-empty-message"
+              >
                 No instances found
               </TableCell>
             </TableRow>
           ) : (
             instances.map((instance) => (
-              <TableRow key={instance.id} className="hover:bg-muted/50">
-                <TableCell className="font-medium">
+              <TableRow
+                key={instance.id}
+                className="hover:bg-muted/50"
+                data-testid={`instance-row-${instance.id}`}
+              >
+                <TableCell
+                  className="font-medium"
+                  data-testid={`instance-name-${instance.id}`}
+                >
                   <Link
                     href={`/admin/instances/${instance.id}`}
                     className="hover:underline"
+                    data-testid={`instance-name-link-${instance.id}`}
+                    aria-label={`View details for ${instance.name}`}
                   >
                     {instance.name}
                   </Link>
                 </TableCell>
-                <TableCell>
+                <TableCell data-testid={`instance-url-${instance.id}`}>
                   <a
                     href={instance.baseUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-muted-foreground hover:underline"
+                    data-testid={`instance-url-link-${instance.id}`}
+                    aria-label={`Open ${instance.baseUrl} in new tab`}
                   >
                     {instance.baseUrl}
                   </a>
                 </TableCell>
-                <TableCell>{getAuthMethodLabel(instance.authMethod)}</TableCell>
-                <TableCell>{getStatusBadge(instance.status)}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
+                <TableCell data-testid={`instance-auth-${instance.id}`}>
+                  {getAuthMethodLabel(instance.authMethod)}
+                </TableCell>
+                <TableCell data-testid={`instance-status-${instance.id}`}>
+                  {getStatusBadge(instance.status)}
+                </TableCell>
+                <TableCell
+                  className="text-sm text-muted-foreground"
+                  data-testid={`instance-last-sync-${instance.id}`}
+                >
                   {formatLastSync(instance.lastSync)}
                 </TableCell>
                 <TableCell className="text-right">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        data-testid={`instance-actions-menu-${instance.id}`}
+                        aria-label={`Open actions menu for ${instance.name}`}
+                      >
                         <span className="sr-only">Open menu</span>
-                        <MoreHorizontal className="h-4 w-4" />
+                        <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuLabel>Actions</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem asChild>
-                        <Link href={`/admin/instances/${instance.id}/edit`}>
-                          <Edit className="mr-2 h-4 w-4" />
+                        <Link
+                          href={`/admin/instances/${instance.id}/edit`}
+                          data-testid={`instance-action-edit-${instance.id}`}
+                        >
+                          <Edit className="mr-2 h-4 w-4" aria-hidden="true" />
                           Edit
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => onTestConnection?.(instance.id)}
+                        data-testid={`instance-action-test-${instance.id}`}
                       >
-                        <TestTube className="mr-2 h-4 w-4" />
+                        <TestTube className="mr-2 h-4 w-4" aria-hidden="true" />
                         Test Connection
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={() => onDelete?.(instance.id)}
                         className="text-destructive focus:text-destructive"
+                        data-testid={`instance-action-delete-${instance.id}`}
                       >
-                        <Trash2 className="mr-2 h-4 w-4" />
+                        <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
                         Delete
                       </DropdownMenuItem>
                     </DropdownMenuContent>
