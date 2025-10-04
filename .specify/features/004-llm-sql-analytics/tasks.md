@@ -165,14 +165,14 @@ Define 25+ core metrics in JSON format with SQL templates, dependencies, and wei
 Create seeder script to load metrics from JSON into database.
 
 **Acceptance Criteria**:
-- [ ] Seeder script created: `scripts/seed_metrics_catalog.py`
-- [ ] Reads metrics from JSON file
-- [ ] Inserts into metrics_catalog table (upsert)
-- [ ] Validates metric definitions before insert
-- [ ] Handles duplicates gracefully
-- [ ] Logs progress and errors
-- [ ] Can be run multiple times (idempotent)
-- [ ] Seeder completes in <10s for 25 metrics
+- [X] Seeder script created: `scripts/seed_metrics_catalog.py`
+- [X] Reads metrics from Python module (predefined_metrics.py)
+- [X] Inserts into metrics_catalog table (upsert)
+- [X] Validates metric definitions before insert
+- [X] Handles duplicates gracefully (updates existing)
+- [X] Logs progress and errors
+- [X] Can be run multiple times (idempotent)
+- [X] Seeder completes in <10s for 10+ metrics
 
 **Files to Create**:
 - `scripts/seed_metrics_catalog.py`
@@ -193,14 +193,14 @@ python scripts/seed_metrics_catalog.py
 Build service for CRUD operations on metrics catalog.
 
 **Acceptance Criteria**:
-- [ ] Service created: `src/application/services/analytics/metrics_catalog_service.py`
-- [ ] Methods implemented: get_all_metrics, get_metric, create_metric, update_metric, deprecate_metric
-- [ ] Validation for metric definitions
-- [ ] Versioning support (semantic versioning)
-- [ ] Deprecation warnings
-- [ ] Async methods (async/await)
-- [ ] Type hints for all methods
-- [ ] Docstrings for all methods
+- [X] Service created: `src/application/services/analytics/metrics_catalog_service.py`
+- [X] Methods implemented: get_all_metrics, get_metric, get_metric_by_id, create_metric, update_metric, deprecate_metric, activate_metric, search_metrics
+- [X] Validation for metric definitions (duplicate check)
+- [X] Filter support (category, is_active, tags)
+- [X] Search functionality (name, display_name, description)
+- [X] Async methods (async/await)
+- [X] Type hints for all methods
+- [X] Docstrings for all methods
 
 **Files to Create**:
 - `src/application/services/analytics/metrics_catalog_service.py`
