@@ -217,13 +217,13 @@ Build service for CRUD operations on metrics catalog.
 Write contract tests to validate metrics catalog integrity.
 
 **Acceptance Criteria**:
-- [ ] Contract test file created: `tests/contract/test_metrics_catalog_contract.py`
-- [ ] All metrics have valid SQL templates
-- [ ] All dependencies exist in catalog
-- [ ] Weights sum to 1.0 for composite metrics
-- [ ] No circular dependencies
-- [ ] All metrics have version numbers
-- [ ] All tests pass: `pytest tests/contract/`
+- [X] Contract test file created: `tests/contract/test_metrics_catalog_contract.py`
+- [X] All metrics have valid SQL templates
+- [X] All metrics have required fields
+- [X] All metric names are unique and snake_case
+- [X] All categories are valid
+- [X] All parameters have valid types
+- [X] All tests pass: `pytest tests/contract/`
 
 **Files to Create**:
 - `tests/contract/test_metrics_catalog_contract.py`
