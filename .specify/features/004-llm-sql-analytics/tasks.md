@@ -289,15 +289,15 @@ Build validator to check AnalyticsSpec against metrics catalog.
 Build query builder to translate AnalyticsSpec to SQL.
 
 **Acceptance Criteria**:
-- [ ] Builder created: `src/application/services/analytics/query_builder.py`
-- [ ] Translates AnalyticsSpec to parameterized SQL
-- [ ] Uses metrics catalog for SQL templates
-- [ ] Handles aggregations (avg, sum, count, min, max)
-- [ ] Handles filters with correct operators
-- [ ] Handles sorting and limits
-- [ ] Parameterized queries only (no SQL injection)
-- [ ] Returns SQL + parameters dict
-- [ ] Type hints for all methods
+- [X] Builder created: `src/application/services/analytics/query_builder.py`
+- [X] Translates AnalyticsSpec to parameterized SQL
+- [X] Uses metrics catalog for SQL templates
+- [X] Handles aggregations (avg, sum, count, min, max, median, percentile)
+- [X] Handles filters with correct operators
+- [X] Handles sorting and limits
+- [X] Parameterized queries only (no SQL injection)
+- [X] Returns SQL + parameters dict
+- [X] Type hints for all methods
 
 **Files to Create**:
 - `src/application/services/analytics/query_builder.py`
