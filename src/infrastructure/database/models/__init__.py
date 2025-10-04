@@ -9,6 +9,13 @@ from .project import Project
 from .tenant import Tenant
 from .user import User
 
+# Analytics models
+from .sprint import Sprint
+from .sprint_issue import SprintIssue
+from .metrics_catalog import MetricsCatalog
+from .analytics_job import AnalyticsJob, JobType, JobStatus
+from .analytics_cache import AnalyticsCache
+
 __all__ = [
     # Base classes and mixins
     "Base",
@@ -17,7 +24,7 @@ __all__ = [
     "TenantMixin",
     "SoftDeleteMixin",
     "to_dict",
-    # Models
+    # Core Models
     "Tenant",
     "JiraInstance",
     "Issue",
@@ -25,4 +32,12 @@ __all__ = [
     "User",
     "Comment",
     "Changelog",
+    # Analytics Models
+    "Sprint",
+    "SprintIssue",
+    "MetricsCatalog",
+    "AnalyticsJob",
+    "JobType",
+    "JobStatus",
+    "AnalyticsCache",
 ]

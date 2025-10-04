@@ -50,14 +50,14 @@ Create Alembic migration for new analytics tables: sprints, sprint_issues, metri
 Create SQLAlchemy models for all new tables with proper relationships and type hints.
 
 **Acceptance Criteria**:
-- [ ] Models inherit from Base, UUIDMixin, TimestampMixin, TenantMixin
-- [ ] All columns have type hints (Mapped[type])
-- [ ] Relationships defined (sprint ↔ sprint_issues ↔ issues)
-- [ ] Docstrings for all models and columns
-- [ ] `__repr__` methods implemented
-- [ ] `__table_args__` with indexes and constraints
-- [ ] Models registered in `__init__.py`
-- [ ] No mypy errors: `mypy src/infrastructure/database/models/`
+- [X] Models inherit from Base, UUIDMixin, TimestampMixin, TenantMixin
+- [X] All columns have type hints (Mapped[type])
+- [X] Relationships defined (sprint ↔ sprint_issues ↔ issues)
+- [X] Docstrings for all models and columns
+- [X] `__repr__` methods implemented
+- [X] `__table_args__` with indexes and constraints
+- [X] Models registered in `__init__.py`
+- [X] No mypy errors: `mypy src/infrastructure/database/models/`
 
 **Files to Create**:
 - `src/infrastructure/database/models/sprint.py`
