@@ -32,84 +32,84 @@
 
 ## 🏗️ Phase 1: Foundation (Week 1)
 
-### Task 1.1: Add Test IDs to Layout Components (2 hours)
+### Task 1.1: Add Test IDs to Layout Components (2 hours) ✅ COMPLETE
 
-- [ ] **Header.tsx**
-  - [ ] Add `data-testid="app-header"` to header
-  - [ ] Add `data-testid="header-logo"` to logo link
-  - [ ] Add `data-testid="header-nav"` to nav element
-  - [ ] Add `data-testid="header-nav-instances"` to Instances link
-  - [ ] Add `data-testid="header-nav-settings"` to Settings link
-  - [ ] Add `data-testid="header-nav-logs"` to Logs link
-  - [ ] Add `data-testid="header-user-menu"` to user menu button
-  - [ ] Add `data-testid="header-user-menu-signout"` to sign out item
-  - [ ] Add ARIA labels to all links
-  - [ ] Add `role="navigation"` to nav
+- [X] **Header.tsx** (8 test IDs)
+  - [X] Add `data-testid="app-header"` to header
+  - [X] Add `data-testid="header-logo"` to logo link
+  - [X] Add `data-testid="header-nav"` to nav element
+  - [X] Add `data-testid="header-nav-instances"` to Instances link
+  - [X] Add `data-testid="header-nav-settings"` to Settings link
+  - [X] Add `data-testid="header-nav-logs"` to Logs link
+  - [X] Add `data-testid="header-user-menu"` to user menu button
+  - [X] Add `data-testid="header-user-menu-signout"` to sign out item
+  - [X] Add ARIA labels to all links
+  - [X] Add `role="navigation"` to nav
 
-- [ ] **Sidebar.tsx**
-  - [ ] Add `data-testid="app-sidebar"` to sidebar
-  - [ ] Add `data-testid="sidebar-nav"` to nav element
-  - [ ] Add test IDs to all navigation items
-  - [ ] Add ARIA labels
-  - [ ] Add `role="navigation"`
+- [X] **Sidebar.tsx** (3+ dynamic test IDs)
+  - [X] Add `data-testid="app-sidebar"` to sidebar
+  - [X] Add `data-testid="sidebar-nav"` to nav element
+  - [X] Add test IDs to all navigation items (dynamic)
+  - [X] Add ARIA labels
+  - [X] Add `role="navigation"`
 
-- [ ] **Footer.tsx**
-  - [ ] Add `data-testid="app-footer"` to footer
-  - [ ] Add test IDs to all links
-  - [ ] Add ARIA labels
+- [X] **Footer.tsx** (3 test IDs)
+  - [X] Add `data-testid="app-footer"` to footer
+  - [X] Add test IDs to all links
+  - [X] Add ARIA labels
 
-### Task 1.2: Add Test IDs to Instance Components (4 hours)
+### Task 1.2: Add Test IDs to Instance Components (4 hours) ✅ COMPLETE
 
-- [ ] **InstancesTable.tsx**
-  - [ ] Add `data-testid="instances-table"` to table
-  - [ ] Add `data-testid="instance-row-{id}"` to each row
-  - [ ] Add test IDs to action buttons
-  - [ ] Add test IDs to column headers
-  - [ ] Add `data-state` attribute for loading/success/error
+- [X] **InstancesTable.tsx** (20+ dynamic test IDs)
+  - [X] Add `data-testid="instances-table"` to table
+  - [X] Add `data-testid="instance-row-{id}"` to each row
+  - [X] Add test IDs to action buttons
+  - [X] Add test IDs to column headers
+  - [X] Add test IDs to all cells and links
 
-- [ ] **InstanceFormWizard.tsx**
-  - [ ] Add `data-testid="instance-wizard"` to container
-  - [ ] Add `data-step` attribute for current step
-  - [ ] Add test IDs to step indicators
-  - [ ] Add test IDs to navigation buttons
+- [X] **InstanceFormWizard.tsx** (12 test IDs)
+  - [X] Add `data-testid="instance-form-wizard"` to container
+  - [X] Add `data-step-status` attribute for current step
+  - [X] Add test IDs to step indicators
+  - [X] Add test IDs to navigation buttons
 
-- [ ] **InstanceDetailsStep.tsx**
-  - [ ] Add `data-testid="wizard-step-1"` to container
-  - [ ] Add `data-testid="instance-name-input"` to name field
-  - [ ] Add `data-testid="instance-url-input"` to URL field
-  - [ ] Add `data-testid="project-filter-input"` to filter field
-  - [ ] Add `data-testid="wizard-step-1-next"` to next button
+- [X] **InstanceDetailsStep.tsx** (8 test IDs)
+  - [X] Add `data-testid="instance-details-form"` to container
+  - [X] Add `data-testid="instance-name-input"` to name field
+  - [X] Add `data-testid="instance-base-url-input"` to URL field
+  - [X] Add `data-testid="instance-project-filter-input"` to filter field
+  - [X] Add `data-testid="instance-details-next-button"` to next button
 
-- [ ] **InstanceAuthStep.tsx**
-  - [ ] Add `data-testid="wizard-step-2"` to container
-  - [ ] Add `data-testid="auth-method-select"` to auth method
-  - [ ] Add `data-testid="email-input"` to email field
-  - [ ] Add `data-testid="api-token-input"` to token field
-  - [ ] Add test IDs to navigation buttons
+- [X] **InstanceAuthStep.tsx** (10 test IDs)
+  - [X] Add `data-testid="instance-auth-form"` to container
+  - [X] Add `data-testid="instance-auth-method-select"` to auth method
+  - [X] Add `data-testid="instance-email-input"` to email field
+  - [X] Add `data-testid="instance-api-token-input"` to token field
+  - [X] Add test IDs to navigation buttons
 
-- [ ] **InstanceValidateStep.tsx**
-  - [ ] Add `data-testid="wizard-step-3"` to container
-  - [ ] Add `data-testid="test-connection-button"` to test button
-  - [ ] Add `data-testid="connection-status"` to status display
-  - [ ] Add `data-testid="connection-success"` for success state
-  - [ ] Add `data-testid="connection-error"` for error state
+- [X] **InstanceValidateStep.tsx** (14 test IDs)
+  - [X] Add `data-testid="instance-validate-step"` to container
+  - [X] Add `data-testid="instance-test-connection-button"` to test button
+  - [X] Add `data-testid="instance-test-result"` to status display
+  - [X] Add `data-testid="test-success-icon"` for success state
+  - [X] Add `data-testid="test-failure-icon"` for error state
 
-- [ ] **InstanceSaveStep.tsx**
-  - [ ] Add `data-testid="wizard-step-4"` to container
-  - [ ] Add `data-testid="review-container"` to review section
-  - [ ] Add `data-testid="wizard-save-button"` to save button
+- [X] **InstanceSaveStep.tsx** (13 test IDs)
+  - [X] Add `data-testid="instance-save-step"` to container
+  - [X] Add `data-testid="instance-save-review"` to review section
+  - [X] Add `data-testid="instance-save-button"` to save button
 
-- [ ] **InstanceEditForm.tsx**
+- [ ] **InstanceEditForm.tsx** (if exists)
   - [ ] Add test IDs to all form fields
   - [ ] Add test IDs to submit/cancel buttons
 
-- [ ] **BackfillConfirmDialog.tsx**
-  - [ ] Add `data-testid="backfill-confirm-dialog"` to dialog
-  - [ ] Add test IDs to confirm/cancel buttons
+- [X] **BackfillConfirmDialog.tsx** (7 test IDs)
+  - [X] Add `data-testid="backfill-confirm-dialog"` to dialog
+  - [X] Add test IDs to confirm/cancel buttons
 
-- [ ] **TestConnectionButton.tsx**
-  - [ ] Add `data-testid="test-connection-button"` to button
-  - [ ] Add `data-state` for testing/success/error
+- [X] **TestConnectionButton.tsx** (2 test IDs + state)
+  - [X] Add `data-testid="test-connection-button"` to button
+  - [X] Add `data-test-status` for testing/success/error
 
 ### Task 1.3: Add Test IDs to UI Components (3 hours)
 
