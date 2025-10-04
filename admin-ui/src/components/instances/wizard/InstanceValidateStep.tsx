@@ -50,7 +50,10 @@ export function InstanceValidateStep({
   const isTestSuccessful = testResult?.success === true;
 
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6"
+      data-testid="instance-validate-step"
+    >
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Test the connection to your Jira instance to verify your credentials before saving.
@@ -61,15 +64,17 @@ export function InstanceValidateStep({
           disabled={testMutation.isPending}
           className="w-full"
           size="lg"
+          data-testid="instance-test-connection-button"
+          aria-label="Test connection to Jira instance"
         >
           {testMutation.isPending ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
               Testing Connection...
             </>
           ) : (
             <>
-              <TestTube className="mr-2 h-4 w-4" />
+              <TestTube className="mr-2 h-4 w-4" aria-hidden="true" />
               Test Connection
             </>
           )}
@@ -78,17 +83,28 @@ export function InstanceValidateStep({
 
       {/* Test Result */}
       {testResult && (
-        <Card>
+        <Card data-testid="instance-test-result">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle
+              className="flex items-center gap-2"
+              data-testid="instance-test-result-title"
+            >
               {testResult.success ? (
                 <>
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  <CheckCircle2
+                    className="h-5 w-5 text-green-500"
+                    aria-hidden="true"
+                    data-testid="test-success-icon"
+                  />
                   Connection Successful
                 </>
               ) : (
                 <>
-                  <XCircle className="h-5 w-5 text-destructive" />
+                  <XCircle
+                    className="h-5 w-5 text-destructive"
+                    aria-hidden="true"
+                    data-testid="test-failure-icon"
+                  />
                   Connection Failed
                 </>
               )}
@@ -96,21 +112,33 @@ export function InstanceValidateStep({
           </CardHeader>
           <CardContent className="space-y-4">
             {testResult.success && testResult.user && (
-              <div className="space-y-2">
+              <div
+                className="space-y-2"
+                data-testid="instance-test-user-info"
+              >
                 <div>
                   <p className="text-sm font-medium">User Information</p>
-                  <p className="text-sm text-muted-foreground">
+                  <p
+                    className="text-sm text-muted-foreground"
+                    data-testid="test-user-name"
+                  >
                     Name: {testResult.user.name}
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p
+                    className="text-sm text-muted-foreground"
+                    data-testid="test-user-email"
+                  >
                     Email: {testResult.user.email}
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p
+                    className="text-sm text-muted-foreground"
+                    data-testid="test-user-account-id"
+                  >
                     Account ID: {testResult.user.accountId}
                   </p>
                 </div>
                 {testResult.rateLimit && (
-                  <div>
+                  <div data-testid="test-rate-limit">
                     <p className="text-sm font-medium">Rate Limit</p>
                     <p className="text-sm text-muted-foreground">
                       {testResult.rateLimit.remaining} / {testResult.rateLimit.limit} requests
@@ -121,10 +149,15 @@ export function InstanceValidateStep({
               </div>
             )}
             {!testResult.success && testResult.error && (
-              <Alert variant="destructive">
-                <XCircle className="h-4 w-4" />
+              <Alert
+                variant="destructive"
+                data-testid="instance-test-error"
+              >
+                <XCircle className="h-4 w-4" aria-hidden="true" />
                 <AlertTitle>Error</AlertTitle>
-                <AlertDescription>{testResult.error}</AlertDescription>
+                <AlertDescription data-testid="test-error-message">
+                  {testResult.error}
+                </AlertDescription>
               </Alert>
             )}
           </CardContent>
@@ -133,10 +166,22 @@ export function InstanceValidateStep({
 
       {/* Navigation */}
       <div className="flex justify-between">
-        <Button type="button" variant="outline" onClick={onBack}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onBack}
+          data-testid="instance-validate-back-button"
+          aria-label="Go back to authentication step"
+        >
           Back
         </Button>
-        <Button onClick={onNext} disabled={!isTestSuccessful}>
+        <Button
+          onClick={onNext}
+          disabled={!isTestSuccessful}
+          data-testid="instance-validate-next-button"
+          aria-label="Continue to save step"
+          aria-disabled={!isTestSuccessful}
+        >
           Next
         </Button>
       </div>

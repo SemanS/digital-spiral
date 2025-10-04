@@ -32,15 +32,18 @@ export function InstanceSaveStep({ data, onComplete, onBack }: InstanceSaveStepP
   };
 
   return (
-    <div className="space-y-6">
-      <Alert>
-        <CheckCircle2 className="h-4 w-4" />
+    <div
+      className="space-y-6"
+      data-testid="instance-save-step"
+    >
+      <Alert data-testid="instance-save-info">
+        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
         <AlertDescription>
           Review your configuration below and click "Save" to create the instance.
         </AlertDescription>
       </Alert>
 
-      <Card>
+      <Card data-testid="instance-save-review">
         <CardHeader>
           <CardTitle>Instance Configuration</CardTitle>
           <CardDescription>Review the details before saving</CardDescription>
@@ -49,47 +52,78 @@ export function InstanceSaveStep({ data, onComplete, onBack }: InstanceSaveStepP
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-sm font-medium text-muted-foreground">Name</p>
-              <p className="text-sm">{data.name}</p>
+              <p
+                className="text-sm"
+                data-testid="review-instance-name"
+              >
+                {data.name}
+              </p>
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">Base URL</p>
-              <p className="text-sm break-all">{data.baseUrl}</p>
+              <p
+                className="text-sm break-all"
+                data-testid="review-instance-base-url"
+              >
+                {data.baseUrl}
+              </p>
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">Auth Method</p>
-              <p className="text-sm">
+              <p
+                className="text-sm"
+                data-testid="review-instance-auth-method"
+              >
                 {data.authMethod === 'api_token' ? 'API Token' : 'OAuth 2.0'}
               </p>
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">Email</p>
-              <p className="text-sm">{data.email}</p>
+              <p
+                className="text-sm"
+                data-testid="review-instance-email"
+              >
+                {data.email}
+              </p>
             </div>
             {data.projectFilter && (
               <div className="col-span-2">
                 <p className="text-sm font-medium text-muted-foreground">Project Filter</p>
-                <p className="text-sm">{data.projectFilter}</p>
+                <p
+                  className="text-sm"
+                  data-testid="review-instance-project-filter"
+                >
+                  {data.projectFilter}
+                </p>
               </div>
             )}
             <div className="col-span-2">
               <p className="text-sm font-medium text-muted-foreground">API Token</p>
-              <p className="text-sm font-mono">{maskToken(data.apiToken)}</p>
+              <p
+                className="text-sm font-mono"
+                data-testid="review-instance-api-token"
+              >
+                {maskToken(data.apiToken)}
+              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {createMutation.isError && (
-        <Alert variant="destructive">
-          <AlertDescription>
+        <Alert
+          variant="destructive"
+          data-testid="instance-save-error"
+        >
+          <AlertDescription data-testid="save-error-message">
             {createMutation.error?.message || 'Failed to create instance. Please try again.'}
           </AlertDescription>
         </Alert>
       )}
 
       {createMutation.isSuccess && (
-        <Alert>
-          <CheckCircle2 className="h-4 w-4" />
+        <Alert data-testid="instance-save-success">
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
           <AlertDescription>
             Instance created successfully! Redirecting...
           </AlertDescription>
@@ -102,21 +136,26 @@ export function InstanceSaveStep({ data, onComplete, onBack }: InstanceSaveStepP
           variant="outline"
           onClick={onBack}
           disabled={createMutation.isPending || createMutation.isSuccess}
+          data-testid="instance-save-back-button"
+          aria-label="Go back to validation step"
         >
           Back
         </Button>
         <Button
           onClick={handleSave}
           disabled={createMutation.isPending || createMutation.isSuccess}
+          data-testid="instance-save-button"
+          aria-label="Save instance configuration"
+          aria-disabled={createMutation.isPending || createMutation.isSuccess}
         >
           {createMutation.isPending ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
               Saving...
             </>
           ) : createMutation.isSuccess ? (
             <>
-              <CheckCircle2 className="mr-2 h-4 w-4" />
+              <CheckCircle2 className="mr-2 h-4 w-4" aria-hidden="true" />
               Saved
             </>
           ) : (

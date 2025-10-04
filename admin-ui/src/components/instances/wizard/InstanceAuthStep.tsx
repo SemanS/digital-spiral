@@ -48,7 +48,11 @@ export function InstanceAuthStep({ data, onNext, onBack }: InstanceAuthStepProps
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="space-y-6"
+        data-testid="instance-auth-form"
+      >
         <FormField
           control={form.control}
           name="authMethod"
@@ -57,19 +61,29 @@ export function InstanceAuthStep({ data, onNext, onBack }: InstanceAuthStepProps
               <FormLabel>Authentication Method</FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="instance-auth-method-select">
                     <SelectValue placeholder="Select authentication method" />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="api_token">API Token</SelectItem>
-                  <SelectItem value="oauth">OAuth 2.0</SelectItem>
+                  <SelectItem
+                    value="api_token"
+                    data-testid="auth-method-api-token"
+                  >
+                    API Token
+                  </SelectItem>
+                  <SelectItem
+                    value="oauth"
+                    data-testid="auth-method-oauth"
+                  >
+                    OAuth 2.0
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <FormDescription>
                 Choose how to authenticate with Jira
               </FormDescription>
-              <FormMessage />
+              <FormMessage data-testid="instance-auth-method-error" />
             </FormItem>
           )}
         />
@@ -85,12 +99,14 @@ export function InstanceAuthStep({ data, onNext, onBack }: InstanceAuthStepProps
                   type="email"
                   placeholder="your-email@example.com"
                   {...field}
+                  data-testid="instance-email-input"
+                  aria-label="Email address"
                 />
               </FormControl>
               <FormDescription>
                 The email address associated with your Jira account
               </FormDescription>
-              <FormMessage />
+              <FormMessage data-testid="instance-email-error" />
             </FormItem>
           )}
         />
@@ -107,6 +123,8 @@ export function InstanceAuthStep({ data, onNext, onBack }: InstanceAuthStepProps
                     type={showToken ? 'text' : 'password'}
                     placeholder="Enter your Jira API token"
                     {...field}
+                    data-testid="instance-api-token-input"
+                    aria-label="API token"
                   />
                   <Button
                     type="button"
@@ -114,11 +132,13 @@ export function InstanceAuthStep({ data, onNext, onBack }: InstanceAuthStepProps
                     size="sm"
                     className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                     onClick={() => setShowToken(!showToken)}
+                    data-testid="instance-api-token-toggle"
+                    aria-label={showToken ? "Hide API token" : "Show API token"}
                   >
                     {showToken ? (
-                      <EyeOff className="h-4 w-4" />
+                      <EyeOff className="h-4 w-4" aria-hidden="true" />
                     ) : (
-                      <Eye className="h-4 w-4" />
+                      <Eye className="h-4 w-4" aria-hidden="true" />
                     )}
                   </Button>
                 </div>
@@ -130,20 +150,34 @@ export function InstanceAuthStep({ data, onNext, onBack }: InstanceAuthStepProps
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
+                  data-testid="instance-api-token-link"
+                  aria-label="Open Atlassian Account Settings in new tab"
                 >
                   Atlassian Account Settings
                 </a>
               </FormDescription>
-              <FormMessage />
+              <FormMessage data-testid="instance-api-token-error" />
             </FormItem>
           )}
         />
 
         <div className="flex justify-between">
-          <Button type="button" variant="outline" onClick={onBack}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onBack}
+            data-testid="instance-auth-back-button"
+            aria-label="Go back to details step"
+          >
             Back
           </Button>
-          <Button type="submit">Next</Button>
+          <Button
+            type="submit"
+            data-testid="instance-auth-next-button"
+            aria-label="Continue to validation step"
+          >
+            Next
+          </Button>
         </div>
       </form>
     </Form>
