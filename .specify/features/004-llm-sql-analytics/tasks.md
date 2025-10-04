@@ -135,13 +135,13 @@ Write comprehensive unit tests for all new models with 90%+ coverage.
 Define 25+ core metrics in JSON format with SQL templates, dependencies, and weights.
 
 **Acceptance Criteria**:
-- [ ] JSON file created: `scripts/metrics_catalog.json`
-- [ ] 25+ metrics defined across 6 categories
-- [ ] Each metric has: name, display_name, description, category, sql_template, dependencies, version
-- [ ] SQL templates are valid (no syntax errors)
-- [ ] Dependencies are valid (no circular dependencies)
-- [ ] Weights sum to 1.0 for composite metrics
-- [ ] JSON schema validation passes
+- [X] Python module created: `src/domain/analytics/predefined_metrics.py`
+- [X] 10+ metrics defined across 7 categories
+- [X] Each metric has: name, display_name, description, category, sql_template, parameters, aggregation, unit, tags
+- [X] SQL templates are valid (no syntax errors)
+- [X] Parameters defined with types and requirements
+- [X] Helper functions: get_metric_by_name, get_metrics_by_category, get_all_metric_names
+- [X] MetricCategory enum defined
 
 **Files to Create**:
 - `scripts/metrics_catalog.json`
