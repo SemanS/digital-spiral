@@ -36,7 +36,11 @@ export function InstanceDetailsStep({ data, onNext }: InstanceDetailsStepProps) 
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="space-y-6"
+        data-testid="instance-details-form"
+      >
         <FormField
           control={form.control}
           name="name"
@@ -44,12 +48,17 @@ export function InstanceDetailsStep({ data, onNext }: InstanceDetailsStepProps) 
             <FormItem>
               <FormLabel>Instance Name</FormLabel>
               <FormControl>
-                <Input placeholder="My Jira Instance" {...field} />
+                <Input
+                  placeholder="My Jira Instance"
+                  {...field}
+                  data-testid="instance-name-input"
+                  aria-label="Instance name"
+                />
               </FormControl>
               <FormDescription>
                 A friendly name to identify this Jira instance
               </FormDescription>
-              <FormMessage />
+              <FormMessage data-testid="instance-name-error" />
             </FormItem>
           )}
         />
@@ -64,12 +73,14 @@ export function InstanceDetailsStep({ data, onNext }: InstanceDetailsStepProps) 
                 <Input
                   placeholder="https://your-domain.atlassian.net"
                   {...field}
+                  data-testid="instance-base-url-input"
+                  aria-label="Base URL"
                 />
               </FormControl>
               <FormDescription>
                 The base URL of your Jira Cloud instance
               </FormDescription>
-              <FormMessage />
+              <FormMessage data-testid="instance-base-url-error" />
             </FormItem>
           )}
         />
@@ -84,18 +95,26 @@ export function InstanceDetailsStep({ data, onNext }: InstanceDetailsStepProps) 
                 <Input
                   placeholder="PROJ1,PROJ2"
                   {...field}
+                  data-testid="instance-project-filter-input"
+                  aria-label="Project filter"
                 />
               </FormControl>
               <FormDescription>
                 Comma-separated list of project keys to sync. Leave empty to sync all projects.
               </FormDescription>
-              <FormMessage />
+              <FormMessage data-testid="instance-project-filter-error" />
             </FormItem>
           )}
         />
 
         <div className="flex justify-end">
-          <Button type="submit">Next</Button>
+          <Button
+            type="submit"
+            data-testid="instance-details-next-button"
+            aria-label="Continue to authentication step"
+          >
+            Next
+          </Button>
         </div>
       </form>
     </Form>

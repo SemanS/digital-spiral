@@ -85,9 +85,17 @@ export function InstanceFormWizard() {
   const progress = (currentStep / steps.length) * 100;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div
+      className="max-w-4xl mx-auto space-y-6"
+      data-testid="instance-form-wizard"
+    >
       {/* Step Indicator */}
-      <div className="space-y-4">
+      <div
+        className="space-y-4"
+        data-testid="wizard-step-indicator"
+        role="navigation"
+        aria-label="Wizard steps"
+      >
         <div className="flex items-center justify-between">
           {steps.map((step, index) => (
             <div key={step.id} className="flex items-center flex-1">
@@ -101,9 +109,17 @@ export function InstanceFormWizard() {
                       ? 'border-primary text-primary'
                       : 'border-muted text-muted-foreground'
                   )}
+                  data-testid={`wizard-step-${step.id}`}
+                  data-step-status={
+                    currentStep > step.id ? 'completed' :
+                    currentStep === step.id ? 'current' :
+                    'pending'
+                  }
+                  aria-label={`Step ${step.id}: ${step.name}`}
+                  aria-current={currentStep === step.id ? 'step' : undefined}
                 >
                   {currentStep > step.id ? (
-                    <Check className="h-5 w-5" />
+                    <Check className="h-5 w-5" aria-label="Completed" />
                   ) : (
                     <span>{step.id}</span>
                   )}
@@ -128,19 +144,30 @@ export function InstanceFormWizard() {
                     'h-0.5 flex-1 mx-2 transition-colors',
                     currentStep > step.id ? 'bg-primary' : 'bg-muted'
                   )}
+                  data-testid={`wizard-step-connector-${step.id}`}
+                  aria-hidden="true"
                 />
               )}
             </div>
           ))}
         </div>
-        <Progress value={progress} className="h-2" />
+        <Progress
+          value={progress}
+          className="h-2"
+          data-testid="wizard-progress"
+          aria-label={`Progress: ${Math.round(progress)}%`}
+        />
       </div>
 
       {/* Step Content */}
-      <Card>
+      <Card data-testid="wizard-step-content">
         <CardHeader>
-          <CardTitle>{steps[currentStep - 1].name}</CardTitle>
-          <CardDescription>{steps[currentStep - 1].description}</CardDescription>
+          <CardTitle data-testid="wizard-step-title">
+            {steps[currentStep - 1].name}
+          </CardTitle>
+          <CardDescription data-testid="wizard-step-description">
+            {steps[currentStep - 1].description}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {currentStep === 1 && (
@@ -184,11 +211,25 @@ export function InstanceFormWizard() {
       </Card>
 
       {/* Navigation */}
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={handleCancel}>
+      <div
+        className="flex justify-between"
+        data-testid="wizard-navigation"
+        role="navigation"
+        aria-label="Wizard navigation"
+      >
+        <Button
+          variant="outline"
+          onClick={handleCancel}
+          data-testid="wizard-cancel-button"
+          aria-label="Cancel wizard and return to instances"
+        >
           Cancel
         </Button>
-        <div className="text-sm text-muted-foreground">
+        <div
+          className="text-sm text-muted-foreground"
+          data-testid="wizard-step-counter"
+          aria-live="polite"
+        >
           Step {currentStep} of {steps.length}
         </div>
       </div>
